@@ -25,7 +25,6 @@
 #
 
 import os
-import os.path as op
 import cv2
 import numpy as np
 from pipeline import Pipeline
@@ -44,7 +43,7 @@ CONFIG_DIR = os.path.join(os.path.dirname(__file__), 'configs')
 
 # Global toggles for output
 SAVE_VIDEO = True
-SAVE_PNG = False
+SAVE_PNG = True
 
 # Global setting for number of processes in batch pipeline
 NUM_PROCESSES = 12  # Set to "Auto" to enable auto-tuning, or an integer for manual
@@ -121,7 +120,7 @@ def process_image_dict(image_dict, out_dir):
         pipeline.batch_run(image_list, save_dir, load_bayer, suffixes='', num_processes=NUM_PROCESSES)
         images_out = glob.glob(f"{save_dir}/*.png")
         print(f"[DEBUG] Processed PNGs for set '{set_name}':\n    {len(images_out)} images\n    First 5: {images_out[:5] if images_out else '[]'}\n    ...\n")
-        img_info = [[os.path.basename(img), os.path.basename(img).split('-')[0]] for img in images_out]
+        img_info = [[os.path.basename(img), float(os.path.basename(img).split('-')[0])] for img in images_out]
         img_info.sort(key=lambda x: x[1])
         if not img_info:
             print(f"[DEBUG] No images found for set '{set_name}'. Skipping.\n")
