@@ -13,12 +13,12 @@ Main modules:
 
 __version__ = "1.0.0"
 
-from .annotation_generation import Config, process_video, parse_camera_intrinsics_from_calibration
+from .annotation_generation import Config, parse_camera_intrinsics_from_calibration, process_video
 from .footpoint_to_ground import bbox_to_3d_geometric_robust
 
 __all__ = [
-    'Config',
-    'process_video',
-    'parse_camera_intrinsics_from_calibration',
-    'bbox_to_3d_geometric_robust',
+    "Config",
+    "process_video",
+    "parse_camera_intrinsics_from_calibration",
+    "bbox_to_3d_geometric_robust",
 ]

@@ -107,3 +107,35 @@ Sensor_Calibration_Toolbox/__pycache__/
 
 # Ignore ffmpeg temp files
 ffmpeg*temp*
+video_processing/
+
+# Model weights (downloaded automatically)
+*.pt
+yolov8*.pt
+
+# Training checkpoints
+checkpoints/
+*.pth
+
+# Output directories
+output_*/
+output_*_test/
+output_*_fixed/
+
+# Old/unused files
+old_venv_packages.txt
+
+# Folders starting with .
+.*/
+
+# uv lock file
+uv.lock
+
+# Sample datasets (large, can be downloaded separately)
+coco_sample/
+
+# Model weights (auto-download if not present)
+# *.pt already listed above
+
+# Third-party libraries (can be installed via pip)
+Annotation/OC_SORT/

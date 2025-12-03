@@ -4,23 +4,23 @@
 # Author: Qiu Jueqin (qiujueqin@gmail.com)
 
 
+import copy
+import importlib
+import math
 import os.path as op
 import sys
 import time
-import copy
-import math
-import importlib
 from collections import OrderedDict
 from multiprocessing import Process
 
 import numpy as np
-
-from utils.yacs import Config
 from modules.basic_module import MODULE_DEPENDENCIES
+from utils.yacs import Config
 
 
 class Pipeline:
-    """ Core fast-openISP pipeline """
+    """Core fast-openISP pipeline"""
+
     def __init__(self, cfg):
         """
         :param cfg: yacs.Config object, configurations about camera specs and module parameters
@@ -41,11 +41,11 @@ class Pipeline:
             module, i.e., Gamma in openISP (not included)
         SDR stage: dataflow after the Gamma module (included)
         """
-        raw_max_value = 2 ** self.cfg.hardware.raw_bit_depth - 1
+        raw_max_value = 2**self.cfg.hardware.raw_bit_depth - 1
         sdr_max_value = 255
 
         # Saturation values should be carefully calculated if BLC module is activated
-        if 'blc' in self.cfg.module_enable_status:
+        if "blc" in self.cfg.module_enable_status:
             blc = self.cfg.blc
             hdr_max_r = raw_max_value - blc.bl_r
             hdr_max_b = raw_max_value - blc.bl_b
@@ -55,12 +55,10 @@ class Pipeline:
         else:
             hdr_max_value = raw_max_value
 
-        return Config({'raw': raw_max_value,
-                       'hdr': hdr_max_value,
-                       'sdr': sdr_max_value})
+        return Config({"raw": raw_max_value, "hdr": hdr_max_value, "sdr": sdr_max_value})
 
     def get_modules(self):
-        """ Get activated ISP modules according to the configuration """
+        """Get activated ISP modules according to the configuration"""
         if op.dirname(__file__) not in sys.path:
             sys.path.insert(0, op.dirname(__file__))
 
@@ -68,14 +66,14 @@ class Pipeline:
 
         modules = OrderedDict()
         for module_name in enabled_modules:
-            package = importlib.import_module('modules.{}'.format(module_name))
+            package = importlib.import_module("modules.{}".format(module_name))
             module_cls = getattr(package, module_name.upper())
             module = module_cls(self.cfg)
 
             for m in MODULE_DEPENDENCIES.get(module_cls.__name__, []):
                 if m not in enabled_modules:
                     raise RuntimeError(
-                        '{} is unavailable when {} is deactivated'.format(module_name, m)
+                        "{} is unavailable when {} is deactivated".format(module_name, m)
                     )
 
             modules[module_name] = module
@@ -105,16 +103,16 @@ class Pipeline:
 
         for module_name, module in self.modules.items():
             start = time.time()
-            print_('Executing {}... '.format(module_name), end='', flush=True)
+            print_("Executing {}... ".format(module_name), end="", flush=True)
 
             module.execute(data)
             if save_intermediates:
                 intermediates[module_name] = copy.copy(data)
 
-            print_('Done. Elapsed {:.3f}s'.format(time.time() - start))
+            print_("Done. Elapsed {:.3f}s".format(time.time() - start))
 
-        data['output'] = self.get_output(data)
-        print_('Pipeline elapsed {:.3f}s'.format(time.time() - pipeline_start))
+        data["output"] = self.get_output(data)
+        print_("Pipeline elapsed {:.3f}s".format(time.time() - pipeline_start))
 
         return data, intermediates
 
@@ -124,16 +122,16 @@ class Pipeline:
         :param data: argument returned by self.execute()
         :return: displayable result: np.ndarray(H, W, 3) in np.uint8 dtype
         """
-        if 'y_image' in data and 'cbcr_image' in data:
-            ycbcr_image = np.dstack([data['y_image'][..., None], data['cbcr_image']])
+        if "y_image" in data and "cbcr_image" in data:
+            ycbcr_image = np.dstack([data["y_image"][..., None], data["cbcr_image"]])
             output = ycbcr_to_rgb(ycbcr_image)
-        elif 'rgb_image' in data:
-            output = data['rgb_image']
+        elif "rgb_image" in data:
+            output = data["rgb_image"]
             if output.dtype != np.uint8:
                 output = output.astype(np.float32)
                 output = (255 * output / self.cfg.saturation_values.hdr).astype(np.uint8)
-        elif 'bayer' in data:
-            output = data['bayer']  # actually not an RGB image, looks very dark for most cameras
+        elif "bayer" in data:
+            output = data["bayer"]  # actually not an RGB image, looks very dark for most cameras
             output = output.astype(np.float32)
             output = (255 * output / self.cfg.saturation_values.raw).astype(np.uint8)
         else:
@@ -141,7 +139,7 @@ class Pipeline:
 
         return output
 
-    def run(self, raw_path, save_dir, load_raw_fn, suffix=''):
+    def run(self, raw_path, save_dir, load_raw_fn, suffix=""):
         """
         A higher level API that writes ISP result into disk
         :param raw_path: path to the raw file to be processed
@@ -153,13 +151,15 @@ class Pipeline:
 
         bayer = load_raw_fn(raw_path)
         data, _ = self.execute(bayer, save_intermediates=False, verbose=False)
-        output = cv2.cvtColor(data['output'], cv2.COLOR_RGB2BGR)
+        output = cv2.cvtColor(data["output"], cv2.COLOR_RGB2BGR)
 
         filename = op.splitext(op.basename(raw_path))[0]
-        save_path = op.join(save_dir, '{}.png'.format(filename + suffix))
+        save_path = op.join(save_dir, "{}.png".format(filename + suffix))
         cv2.imwrite(save_path, output)
 
-    def batch_run(self, raw_paths, save_dirs, load_raw_fn, suffixes='', num_processes=1, show_progress=True):
+    def batch_run(
+        self, raw_paths, save_dirs, load_raw_fn, suffixes="", num_processes=1, show_progress=True
+    ):
         """
         Batch version of self.run via multiprocessing
         :param raw_paths: list of paths to the raw files to be executed
@@ -171,6 +171,7 @@ class Pipeline:
         :param show_progress: whether to show tqdm progress bar
         """
         from tqdm import tqdm
+
         num_files = len(raw_paths)
         num_batches = math.ceil(num_files / num_processes)
 
@@ -195,11 +196,15 @@ class Pipeline:
             pool = []
             for rank in range(batch_size):
                 pool.append(
-                    Process(target=self.run,
-                            kwargs={'raw_path': raw_paths_batch[rank],
-                                    'save_dir': save_dirs_batch[rank],
-                                    'load_raw_fn': load_raw_fn,
-                                    'suffix': suffixes_batch[rank]})
+                    Process(
+                        target=self.run,
+                        kwargs={
+                            "raw_path": raw_paths_batch[rank],
+                            "save_dir": save_dirs_batch[rank],
+                            "load_raw_fn": load_raw_fn,
+                            "suffix": suffixes_batch[rank],
+                        },
+                    )
                 )
 
             for p in pool:
@@ -210,12 +215,10 @@ class Pipeline:
 
 
 def ycbcr_to_rgb(ycbcr_array):
-    """ Convert YCbCr 3-channel array into sRGB array """
+    """Convert YCbCr 3-channel array into sRGB array"""
     assert ycbcr_array.dtype == np.uint8
 
-    matrix = np.array([[298, 0, 409],
-                       [298, -100, -208],
-                       [298, 516, 0]], dtype=np.int32).T  # x256
+    matrix = np.array([[298, 0, 409], [298, -100, -208], [298, 516, 0]], dtype=np.int32).T  # x256
     bias = np.array([-56992, 34784, -70688], dtype=np.int32).reshape(1, 1, 3)  # x256
 
     ycbcr_array = ycbcr_array.astype(np.int32)

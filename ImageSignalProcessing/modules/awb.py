@@ -7,7 +7,7 @@
 import numpy as np
 
 from .basic_module import BasicModule
-from .helpers import split_bayer, reconstruct_bayer
+from .helpers import reconstruct_bayer, split_bayer
 
 
 class AWB(BasicModule):
@@ -20,17 +20,15 @@ class AWB(BasicModule):
         self.b_gain = np.array(self.params.b_gain, dtype=np.uint32)  # x1024
 
     def execute(self, data):
-        bayer = data['bayer'].astype(np.uint32)
+        bayer = data["bayer"].astype(np.uint32)
 
         sub_arrays = split_bayer(bayer, self.cfg.hardware.bayer_pattern)
         gains = (self.r_gain, self.gr_gain, self.gb_gain, self.b_gain)
 
         wb_sub_arrays = []
         for sub_array, gain in zip(sub_arrays, gains):
-            wb_sub_arrays.append(
-                np.right_shift(gain * sub_array, 10)
-            )
+            wb_sub_arrays.append(np.right_shift(gain * sub_array, 10))
         wb_bayer = reconstruct_bayer(wb_sub_arrays, self.cfg.hardware.bayer_pattern)
         wb_bayer = np.clip(wb_bayer, 0, self.cfg.saturation_values.hdr)
 
-        data['bayer'] = wb_bayer.astype(np.uint16)
+        data["bayer"] = wb_bayer.astype(np.uint16)

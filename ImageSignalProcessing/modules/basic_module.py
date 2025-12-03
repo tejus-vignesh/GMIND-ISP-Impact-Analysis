@@ -8,7 +8,7 @@ MODULE_DEPENDENCIES = {}
 
 
 def register_dependent_modules(dependent_module_names):
-    """ A decorator to register dependent ISP modules """
+    """A decorator to register dependent ISP modules"""
     if not isinstance(dependent_module_names, (list, tuple)):
         dependent_module_names = tuple([dependent_module_names])
 

@@ -1,0 +1,67 @@
+# GMIND Dataset Configuration
+# Defines train, validation, and test data splits
+#
+# Recommended Models for Training:
+# - YOLO: yolov12m (latest, best balanced) or yolov12n/yolov12s/yolov12l/yolov12x
+# - Transformer: rtdetr-l (real-time transformer) or dino (via MMDetection)
+
+data:
+  # Root directory of GMIND dataset
+  # Examples: Windows: "H:/GMIND", WSL: "/mnt/h/GMIND", Linux: "/path/to/GMIND"
+  root: "/path/to/GMIND"  # UPDATE THIS PATH to your GMIND dataset location
+  
+  # Sensor to use
+  # Options: "FLIR3.2", "FLIR8.9", "CCTV", "Thermal", "EB", "Drone"
+  sensor: "FLIR8.9"
+  
+  # Frame sampling
+  # Use every 10th frame (1Hz instead of 30Hz) to get more frames
+  frame_stride: 10
+  max_frames_per_video: null  # Max frames per video (null = all frames)
+
+# Train/Validation/Test splits
+# 
+# Split strategy:
+# - Training: All of PedestrianInteractionSet (both /1 and /2), 80% of OutlierSet/1, 80% of UrbanJunctionSet/1
+# - Validation: 20% of OutlierSet/1 and 20% of UrbanJunctionSet/1 (remaining portions)
+# - Test: All of OutlierSet/2 and UrbanJunctionSet/2 (for final metrics evaluation)
+
+train:
+  sets:
+    - "OutlierSet"
+    - "PedestrianInteractionSet"
+    - "UrbanJunctionSet"
+  # Specify subdirectories for each set
+  set_subdirs:
+    "OutlierSet": [1]
+    "PedestrianInteractionSet": [1, 2]  # All of PedestrianInteractionSet
+    "UrbanJunctionSet": [1]
+  # Use 80% of OutlierSet/1 and UrbanJunctionSet/1 for training
+  percentage_split:
+    "OutlierSet/1": 0.8
+    "UrbanJunctionSet/1": 0.8
+
+validation:
+  # Validation: 20% of OutlierSet/1 and UrbanJunctionSet/1 (remaining portions after 80% used for training)
+  sets:
+    - "OutlierSet"
+    - "UrbanJunctionSet"
+  set_subdirs:
+    "OutlierSet": [1]
+    "UrbanJunctionSet": [1]
+  # Use last 20% of OutlierSet/1 and UrbanJunctionSet/1 (from 80% to 100%)
+  percentage_split_start:
+    "OutlierSet/1": 0.8
+    "UrbanJunctionSet/1": 0.8
+  percentage_split:
+    "OutlierSet/1": 0.2
+    "UrbanJunctionSet/1": 0.2
+
+test:
+  # Test: All of OutlierSet/2 and UrbanJunctionSet/2 (for final metrics evaluation)
+  sets:
+    - "OutlierSet"
+    - "UrbanJunctionSet"
+  set_subdirs:
+    "OutlierSet": [2]
+    "UrbanJunctionSet": [2]

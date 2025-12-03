@@ -4,9 +4,9 @@
 # Author: Qiu Jueqin (qiujueqin@gmail.com)
 
 
-import os.path as op
-import copy
 import argparse
+import copy
+import os.path as op
 import pathlib
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
@@ -60,7 +60,7 @@ class Config(OrderedDict):
         :param init: dict | yaml filepath | argparse.Namespace
         """
 
-        self.__dict__['__immutable__'] = False
+        self.__dict__["__immutable__"] = False
 
         if init is None:
             super().__init__()
@@ -72,16 +72,16 @@ class Config(OrderedDict):
             self.from_namespace(init)
         else:
             raise TypeError(
-                f'Config could only be instantiated from a dict, a yaml '
-                f'filepath, or an argparse.Namespace object, but given a '
-                f'{type(init)} object'
+                f"Config could only be instantiated from a dict, a yaml "
+                f"filepath, or an argparse.Namespace object, but given a "
+                f"{type(init)} object"
             )
 
     # ---------------- Immutability ----------------
 
     @property
     def is_frozen(self):
-        return self.__dict__['__immutable__']
+        return self.__dict__["__immutable__"]
 
     def freeze(self):
         self._set_immutable(True)
@@ -104,9 +104,9 @@ class Config(OrderedDict):
             self.freeze()
 
     def _set_immutable(self, is_immutable):
-        """ Recursively set immutability. """
+        """Recursively set immutability."""
 
-        self.__dict__['__immutable__'] = is_immutable
+        self.__dict__["__immutable__"] = is_immutable
         for v in self.values():
             if isinstance(v, Config):
                 v._set_immutable(is_immutable)
@@ -115,21 +115,19 @@ class Config(OrderedDict):
 
     def __setattr__(self, key, value):
         if self.is_frozen:
-            raise AttributeError('attempted to modify an immutable Config')
+            raise AttributeError("attempted to modify an immutable Config")
         self[key] = value
 
     def __setitem__(self, key, value):
         if self.is_frozen:
-            raise AttributeError('attempted to modify an immutable Config')
+            raise AttributeError("attempted to modify an immutable Config")
         super().__setitem__(key, value)
 
     def __getattr__(self, key):
         if key in self:
             return self[key]
         else:
-            raise AttributeError(
-                f'attempted to access a non-existing attribute: {key}'
-            )
+            raise AttributeError(f"attempted to access a non-existing attribute: {key}")
 
     # ---------------- Input ----------------
 
@@ -140,18 +138,18 @@ class Config(OrderedDict):
         """
 
         if not isinstance(dic, dict):
-            raise TypeError(f'expected a dict, but given a {type(dic)}')
+            raise TypeError(f"expected a dict, but given a {type(dic)}")
 
         super().__init__(Config._from_dict(dic))
         self.freeze()
 
     def from_yaml(self, yaml_path):
-        """ Instantiation from a yaml file. """
+        """Instantiation from a yaml file."""
 
         if not isinstance(yaml_path, (str, pathlib.Path)):
             raise TypeError(
-                f'expected a path string or a pathlib.Path object, but given '
-                f'a {type(yaml_path)}'
+                f"expected a path string or a pathlib.Path object, but given "
+                f"a {type(yaml_path)}"
             )
 
         # Always resolve relative to this script's directory
@@ -161,9 +159,9 @@ class Config(OrderedDict):
             yaml_path = (script_dir / yaml_path).resolve()
 
         if not op.isfile(str(yaml_path)):
-            raise FileNotFoundError(f'file {yaml_path} does not exist')
+            raise FileNotFoundError(f"file {yaml_path} does not exist")
 
-        with open(yaml_path, 'r') as fp:
+        with open(yaml_path, "r") as fp:
             dic = yaml.safe_load(fp)
 
         super().__init__(Config._from_dict(dic))
@@ -192,8 +190,7 @@ class Config(OrderedDict):
 
         if not isinstance(namespace, argparse.Namespace):
             raise TypeError(
-                f'expected an argparse.Namespace object, but given a '
-                f'{type(namespace)} '
+                f"expected an argparse.Namespace object, but given a " f"{type(namespace)} "
             )
 
         nested_dict = self._separator_dict_to_nested_dict(vars(namespace))
@@ -251,20 +248,18 @@ class Config(OrderedDict):
         elif isinstance(other, (dict, str, pathlib.Path, argparse.Namespace)):
             other = Config(other)
         else:
-            raise TypeError(
-                f'attempted to merge from an unsupported {type(other)} object'
-            )
+            raise TypeError(f"attempted to merge from an unsupported {type(other)} object")
 
         def _merge(source_cfg, other_cfg, add_new, keep_existed):
-            """ Recursively merge the new Config object into the source one """
+            """Recursively merge the new Config object into the source one"""
 
             with source_cfg.unfreeze():
                 for k, v in other_cfg.items():
                     if k not in source_cfg and not add_new:
                         raise AttributeError(
-                            f'attempted to add an attribute {k} but it is not '
-                            f'found in the source Config. Set `allow_new_attr` '
-                            f'to True if requires to add new attributes'
+                            f"attempted to add an attribute {k} but it is not "
+                            f"found in the source Config. Set `allow_new_attr` "
+                            f"to True if requires to add new attributes"
                         )
 
                     if isinstance(v, Config):
@@ -278,8 +273,7 @@ class Config(OrderedDict):
                 if not keep_existed:
                     source_keys = list(source_cfg.keys())
                     for k in source_keys:
-                        if k not in other_cfg and \
-                                not isinstance(source_cfg[k], Config):
+                        if k not in other_cfg and not isinstance(source_cfg[k], Config):
                             source_cfg.remove(k)
 
         _merge(self, other, allow_new_attr, keep_existed_attr)
@@ -331,17 +325,17 @@ class Config(OrderedDict):
 
         parser = argparse.ArgumentParser()
         for k, v in separator_dict.items():
-            parser.add_argument(f'--{k}', type=type(v), default=v)
+            parser.add_argument(f"--{k}", type=type(v), default=v)
 
         return parser
 
     def dump(self, save_path):
-        """ Dump a Config object into a yaml file """
-        with open(save_path, 'w') as fp:
+        """Dump a Config object into a yaml file"""
+        with open(save_path, "w") as fp:
             yaml.safe_dump(self.to_dict(alphabetical=True), fp)
 
     def copy(self):
-        """ Create a deep copy of the Config object """
+        """Create a deep copy of the Config object"""
         return Config(copy.deepcopy(self.to_dict()))
 
     # ---------------- Misc ----------------
@@ -358,25 +352,23 @@ class Config(OrderedDict):
             texts = []
             for k, v in dic.items():
                 if not isinstance(v, Config):
-                    texts += ['{:<25}{}'.format(' ' * indent + k + ':', str(v))]
+                    texts += ["{:<25}{}".format(" " * indent + k + ":", str(v))]
                 else:
-                    texts += [k + ':'] + _to_string(v, indent=indent + 2)
+                    texts += [k + ":"] + _to_string(v, indent=indent + 2)
             return texts
 
-        return '\n'.join(_to_string(self))
+        return "\n".join(_to_string(self))
 
     def print(self, streamer=print):
         streamer(self._format())
 
     def remove(self, key):
-        """ Remove an attribute by its key. """
+        """Remove an attribute by its key."""
 
         if self.is_frozen:
-            raise AttributeError('attempted to modify an immutable Config')
+            raise AttributeError("attempted to modify an immutable Config")
         if key not in self:
-            raise AttributeError(
-                f'attempted to delete a non-existing attribute: {key}'
-            )
+            raise AttributeError(f"attempted to delete a non-existing attribute: {key}")
 
         del self[key]
 
@@ -394,7 +386,7 @@ class Config(OrderedDict):
         return dic
 
     @staticmethod
-    def _separator_dict_to_nested_dict(separator_dict, separator='.'):
+    def _separator_dict_to_nested_dict(separator_dict, separator="."):
         """
         Create a nested dict from a single-hierarchy dict.
 
@@ -431,7 +423,7 @@ class Config(OrderedDict):
             return defaultdict(_init_nested_dict)
 
         def _default_to_dict(d):
-            """ Convert a defaultdict object into a regular dict """
+            """Convert a defaultdict object into a regular dict"""
             if isinstance(d, defaultdict):
                 d = {kk: _default_to_dict(vv) for kk, vv in d.items()}
             return d
@@ -448,7 +440,7 @@ class Config(OrderedDict):
         return _default_to_dict(nested_dict)
 
     @staticmethod
-    def _nested_dict_to_separator_dict(nested_dict, separator='.'):
+    def _nested_dict_to_separator_dict(nested_dict, separator="."):
         """
         Create a single-hierarchy dict from a nested dict.
 
@@ -481,10 +473,10 @@ class Config(OrderedDict):
         """
         nested_dict = copy.deepcopy(nested_dict)
 
-        def _create_separator_dict(x, key='', separator_dict={}):
+        def _create_separator_dict(x, key="", separator_dict={}):
             if isinstance(x, dict):
                 for k, v in x.items():
-                    kk = f'{key}{separator}{k}' if key else k
+                    kk = f"{key}{separator}{k}" if key else k
                     _create_separator_dict(x[k], kk)
             else:
                 separator_dict[key] = x

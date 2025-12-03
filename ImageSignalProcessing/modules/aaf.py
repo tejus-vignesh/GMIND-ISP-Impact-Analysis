@@ -7,12 +7,12 @@
 import numpy as np
 
 from .basic_module import BasicModule
-from .helpers import pad, split_bayer, reconstruct_bayer, shift_array
+from .helpers import pad, reconstruct_bayer, shift_array, split_bayer
 
 
 class AAF(BasicModule):
     def execute(self, data):
-        bayer = data['bayer'].astype(np.uint32)
+        bayer = data["bayer"].astype(np.uint32)
 
         padded_bayer = pad(bayer, pads=2)
         padded_sub_arrays = split_bayer(padded_bayer, self.cfg.hardware.bayer_pattern)
@@ -29,4 +29,4 @@ class AAF(BasicModule):
 
         aaf_bayer = reconstruct_bayer(aaf_sub_arrays, self.cfg.hardware.bayer_pattern)
 
-        data['bayer'] = aaf_bayer.astype(np.uint16)
+        data["bayer"] = aaf_bayer.astype(np.uint16)

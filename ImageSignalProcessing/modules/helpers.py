@@ -12,10 +12,12 @@ def get_bayer_indices(pattern):
     Get (x_start_idx, y_start_idx) for R, Gr, Gb, and B channels
     in Bayer array, respectively
     """
-    return {'gbrg': ((0, 1), (1, 1), (0, 0), (1, 0)),
-            'rggb': ((0, 0), (1, 0), (0, 1), (1, 1)),
-            'bggr': ((1, 1), (0, 1), (1, 0), (0, 0)),
-            'grbg': ((1, 0), (0, 0), (1, 1), (0, 1))}[pattern.lower()]
+    return {
+        "gbrg": ((0, 1), (1, 1), (0, 0), (1, 0)),
+        "rggb": ((0, 0), (1, 0), (0, 1), (1, 1)),
+        "bggr": ((1, 1), (0, 1), (1, 0), (0, 0)),
+        "grbg": ((1, 0), (0, 0), (1, 1), (0, 1)),
+    }[pattern.lower()]
 
 
 def split_bayer(bayer_array, bayer_pattern):
@@ -30,9 +32,7 @@ def split_bayer(bayer_array, bayer_pattern):
     sub_arrays = []
     for idx in rggb_indices:
         x0, y0 = idx
-        sub_arrays.append(
-            bayer_array[y0::2, x0::2]
-        )
+        sub_arrays.append(bayer_array[y0::2, x0::2])
 
     return sub_arrays
 
@@ -57,7 +57,7 @@ def reconstruct_bayer(sub_arrays, bayer_pattern):
     return bayer_array
 
 
-def pad(array, pads, mode='reflect'):
+def pad(array, pads, mode="reflect"):
     """
     Pad an array with given margins
     :param array: np.ndarray(H, W, ...)
@@ -101,7 +101,7 @@ def crop(array, crops):
         top_crop = bottom_crop = left_crop = right_crop = crops
 
     height, width = array.shape[:2]
-    return array[top_crop: height - bottom_crop, left_crop: width - right_crop, ...]
+    return array[top_crop : height - bottom_crop, left_crop : width - right_crop, ...]
 
 
 def shift_array(padded_array, window_size):
@@ -113,14 +113,14 @@ def shift_array(padded_array, window_size):
         array before padding locates in the middle of the generator
     """
     wy, wx = window_size if isinstance(window_size, (list, tuple)) else (window_size, window_size)
-    assert wy % 2 == 1 and wx % 2 == 1, 'only odd window size is valid'
+    assert wy % 2 == 1 and wx % 2 == 1, "only odd window size is valid"
 
     height = padded_array.shape[0] - wy + 1
     width = padded_array.shape[1] - wx + 1
 
     for y0 in range(wy):
         for x0 in range(wx):
-            yield padded_array[y0:y0 + height, x0:x0 + width, ...]
+            yield padded_array[y0 : y0 + height, x0 : x0 + width, ...]
 
 
 def gen_gaussian_kernel(kernel_size, sigma):
@@ -140,7 +140,7 @@ def gen_gaussian_kernel(kernel_size, sigma):
 
     y, x = np.meshgrid(y, x)
 
-    kernel = np.exp(-(x ** 2 + y ** 2) / (2 * sigma ** 2))
+    kernel = np.exp(-(x**2 + y**2) / (2 * sigma**2))
     return kernel / kernel.sum()
 
 
@@ -176,11 +176,11 @@ def mean_filter(array, filter_size=3):
     :return: filtered array: np.ndarray(H, W, ...)
     """
 
-    assert filter_size % 2 == 1, 'only odd filter size is valid'
+    assert filter_size % 2 == 1, "only odd filter size is valid"
 
     padded_array = pad(array, pads=filter_size // 2)
     shifted_arrays = shift_array(padded_array, window_size=filter_size)
-    return (sum(shifted_arrays) / filter_size ** 2).astype(array.dtype)
+    return (sum(shifted_arrays) / filter_size**2).astype(array.dtype)
 
 
 def bilateral_filter(array, spatial_weights, intensity_weights_lut, right_shift=0):

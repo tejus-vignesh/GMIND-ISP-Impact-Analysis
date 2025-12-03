@@ -7,10 +7,10 @@
 import numpy as np
 
 from .basic_module import BasicModule, register_dependent_modules
-from .helpers import generic_filter, gen_gaussian_kernel
+from .helpers import gen_gaussian_kernel, generic_filter
 
 
-@register_dependent_modules('csc')
+@register_dependent_modules("csc")
 class EEH(BasicModule):
     def __init__(self, cfg):
         super().__init__(cfg)
@@ -19,13 +19,17 @@ class EEH(BasicModule):
         self.gaussian = (1024 * kernel / kernel.max()).astype(np.int32)  # x1024
 
         t1, t2 = self.params.flat_threshold, self.params.edge_threshold
-        threshold_delta = np.clip(t2 - t1, 1E-6, None)
-        self.middle_slope = np.array(self.params.edge_gain * t2 / threshold_delta, dtype=np.int32)  # x256
-        self.middle_intercept = -np.array(self.params.edge_gain * t1 * t2 / threshold_delta, dtype=np.int32)  # x256
+        threshold_delta = np.clip(t2 - t1, 1e-6, None)
+        self.middle_slope = np.array(
+            self.params.edge_gain * t2 / threshold_delta, dtype=np.int32
+        )  # x256
+        self.middle_intercept = -np.array(
+            self.params.edge_gain * t1 * t2 / threshold_delta, dtype=np.int32
+        )  # x256
         self.edge_gain = np.array(self.params.edge_gain, dtype=np.int32)  # x256
 
     def execute(self, data):
-        y_image = data['y_image'].astype(np.int32)
+        y_image = data["y_image"].astype(np.int32)
 
         delta = y_image - generic_filter(y_image, self.gaussian)
         sign_map = np.sign(delta)
@@ -33,13 +37,12 @@ class EEH(BasicModule):
 
         middle_delta = np.right_shift(self.middle_slope * abs_delta + self.middle_intercept, 8)
         edge_delta = np.right_shift(self.edge_gain * abs_delta, 8)
-        enhanced_delta = (
-                (abs_delta > self.params.flat_threshold) * (abs_delta <= self.params.edge_threshold) * middle_delta +
-                (abs_delta > self.params.edge_threshold) * edge_delta
-        )
+        enhanced_delta = (abs_delta > self.params.flat_threshold) * (
+            abs_delta <= self.params.edge_threshold
+        ) * middle_delta + (abs_delta > self.params.edge_threshold) * edge_delta
 
         enhanced_delta = sign_map * np.clip(enhanced_delta, 0, self.params.delta_threshold)
         eeh_y_image = np.clip(y_image + enhanced_delta, 0, self.cfg.saturation_values.sdr)
 
-        data['y_image'] = eeh_y_image.astype(np.uint8)
-        data['edge_map'] = delta
+        data["y_image"] = eeh_y_image.astype(np.uint8)
+        data["edge_map"] = delta

@@ -150,6 +150,57 @@ train_loader = get_gmind_dataloader(
 )
 ```
 
+## Export to YOLO Format
+
+Export GMIND datasets to Ultralytics YOLO format for training:
+
+```python
+from DataLoader import GMINDDataset, export_gmind_to_yolo
+
+# Create train and validation datasets
+train_dataset = GMINDDataset(
+    data_root="/mnt/h/GMIND",
+    sets=["UrbanJunctionSet"],
+    sensor="FLIR3.2",
+    frame_stride=10,
+)
+
+val_dataset = GMINDDataset(
+    data_root="/mnt/h/GMIND",
+    sets=["DistanceTestSet"],
+    sensor="FLIR3.2",
+    frame_stride=10,
+)
+
+# Export to YOLO format
+data_yaml = export_gmind_to_yolo(
+    train_dataset=train_dataset,
+    val_dataset=val_dataset,
+    out_dir="/path/to/yolo_export",
+    class_names=None  # Auto-inferred from annotations
+)
+
+# data_yaml points to the generated data.yaml file
+# Output structure:
+# yolo_export/
+# ├── train/
+# │   ├── images/
+# │   └── labels/
+# ├── val/
+# │   ├── images/
+# │   └── labels/
+# └── data.yaml
+```
+
+The export function:
+- Converts COCO-format bounding boxes to YOLO format (normalized center coordinates)
+- Extracts frames from videos and saves as images
+- Creates YOLO-compatible label files (one `.txt` per image)
+- Generates a `data.yaml` file for Ultralytics training
+- Automatically infers class names from annotations, or you can provide them explicitly
+
+**Note**: This is useful when training with Ultralytics YOLO models, as they require YOLO format datasets. The DeepLearning training script automatically uses this export when training with the Ultralytics backend.
+
 ## Parameters
 
 ### GMINDDataset
