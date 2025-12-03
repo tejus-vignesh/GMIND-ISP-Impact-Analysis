@@ -1,0 +1,192 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gmind-sdk"
+version = "1.0.0"
+description = "GMIND SDK: Toolkit for GMIND ITS infrastructure node dataset - ISP, calibration, annotation, training, and evaluation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "GMIND Team", email = "team@gmind.dev"}
+]
+keywords = [
+    "detection",
+    "pytorch",
+    "deep-learning",
+    "computer-vision",
+    "benchmarking",
+    "calibration",
+    "annotation",
+    "tracking",
+    "evaluation",
+    "isp",
+    "sensor-fusion",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "numpy>=1.21",
+    "opencv-python>=4.8",
+    "scipy>=1.7",
+    "tqdm>=4.62",
+    "PyYAML>=6.0",
+    "Pillow>=9.0",
+    "matplotlib>=3.5.0",  # For plotting in evaluation scripts
+    "pandas>=1.3.0",  # For Validation scripts (radar visualisation/reprojection)
+]
+
+[project.optional-dependencies]
+# Optional backend integrations
+ultralytics = ["ultralytics>=8.0.0"]
+mmdet = ["mmdet>=3.0.0", "mmcv>=2.0.0rc4,<2.2.0"]
+
+# Evaluation dependencies
+eval = [
+    "pycocotools>=2.0.2",
+]
+
+# Calibration GUI dependencies
+calibration = [
+    "PyQt5>=5.15.0",  # For LIDAR-camera extrinsic calibration GUI
+]
+
+# TensorBoard support (optional, for training visualisation)
+tensorboard = ["tensorboard>=2.10.0"]
+
+# All optional dependencies combined
+all = [
+    "ultralytics>=8.0.0",
+    "mmdet>=3.0.0",
+    "mmcv>=2.0.0rc4,<2.2.0",
+    "pycocotools>=2.0.2",
+    "tensorboard>=2.10.0",
+    "PyQt5>=5.15.0",
+]
+
+# Development dependencies
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "isort>=5.12",
+    "pylint>=2.17",
+    "mypy>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/daramolloy/GMIND-sdk"
+Documentation = "https://github.com/daramolloy/GMIND-sdk/wiki"
+Repository = "https://github.com/daramolloy/GMIND-sdk.git"
+Issues = "https://github.com/daramolloy/GMIND-sdk/issues"
+
+[project.scripts]
+train-model = "DeepLearning.train_models:main"
+smoke-train = "tests.smoke_train:main"
+
+[tool.setuptools.packages.find]
+include = [
+    "Annotation",
+    "Calibration",
+    "DataLoader",
+    "DeepLearning",
+    "Evaluation",
+    "ImageSignalProcessing",
+    "Validation",
+    "misc",
+    "coco_sample",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | __pycache__
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+skip_glob = ["*/migrations/*"]
+
+[tool.pylint.messages_control]
+disable = [
+    "C0111",  # missing-docstring
+    "C0103",  # invalid-name
+    "R0913",  # too-many-arguments
+]
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --tb=short"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["DeepLearning"]
+omit = [
+    "*/tests/*",
+    "*/setup.py",
+    "*/__main__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

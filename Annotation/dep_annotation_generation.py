@@ -1007,7 +1007,7 @@ class ObjectDetector:
                 if hasattr(self.model_full_frame, "eval"):
                     self.model_full_frame.eval()
                 self.backend_full_frame = "ultralytics"
-                print("✓ Loaded YOLOv11x for full frame detection")
+                print("Loaded YOLOv11x for full frame detection")
             except Exception as e:
                 print(f"  YOLOv11x not available: {e}")
                 raise RuntimeError(f"Failed to load YOLOv11x for dual detector mode: {e}")
@@ -1024,7 +1024,7 @@ class ObjectDetector:
                 if hasattr(self.model, "eval"):
                     self.model.eval()
                 self.backend = "ultralytics"
-                print("✓ Loaded RT-DETR-X for region detection")
+                print("Loaded RT-DETR-X for region detection")
             except Exception as e:
                 print(f"  RT-DETR-X not available: {e}")
                 # Fallback to RT-DETR-L
@@ -1037,7 +1037,7 @@ class ObjectDetector:
                     if hasattr(self.model, "eval"):
                         self.model.eval()
                     self.backend = "ultralytics"
-                    print("✓ Loaded RT-DETR-L for region detection (fallback)")
+                    print("Loaded RT-DETR-L for region detection (fallback)")
                 except Exception as e2:
                     raise RuntimeError(f"Failed to load RT-DETR for dual detector mode: {e2}")
             return
@@ -1061,7 +1061,7 @@ class ObjectDetector:
                 if hasattr(self.model, "eval"):
                     self.model.eval()
                 self.backend = "ultralytics"
-                print(f"✓ Loaded {self.config.detector_model.upper()} (Ultralytics)")
+                print(f"Loaded {self.config.detector_model.upper()} (Ultralytics)")
                 return
             except Exception as e:
                 print(f"  {self.config.detector_model} not available: {e}")
@@ -1083,7 +1083,7 @@ class ObjectDetector:
                 if hasattr(self.model, "eval"):
                     self.model.eval()
                 self.backend = "ultralytics"
-                print(f"✓ Loaded {self.config.detector_model.upper()} (Ultralytics)")
+                print(f"Loaded {self.config.detector_model.upper()} (Ultralytics)")
                 return
             except Exception as e:
                 print(f"  {self.config.detector_model} not available: {e}")
@@ -1101,7 +1101,7 @@ class ObjectDetector:
             if hasattr(self.model, "eval"):
                 self.model.eval()
             self.backend = "ultralytics"
-            print("✓ Loaded YOLOv11x (Ultralytics) - default")
+            print("Loaded YOLOv11x (Ultralytics) - default")
             return
         except Exception as e:
             print(f"  YOLOv11x not available: {e}")
@@ -1118,7 +1118,7 @@ class ObjectDetector:
             if hasattr(self.model, "eval"):
                 self.model.eval()
             self.backend = "ultralytics"
-            print("✓ Loaded YOLOv8x (Ultralytics) - fallback")
+            print("Loaded YOLOv8x (Ultralytics) - fallback")
             return
         except Exception as e:
             print(f"  YOLOv8x not available: {e}")
@@ -1133,7 +1133,7 @@ class ObjectDetector:
             self.model.to(self.device)
             self.model.eval()
             self.backend = "torchvision"
-            print("✓ Loaded Mask R-CNN ResNet50 FPN v2 (TorchVision) - fallback")
+            print("Loaded Mask R-CNN ResNet50 FPN v2 (TorchVision) - fallback")
             return
         except Exception as e:
             raise RuntimeError(f"Failed to load any detection model: {e}")
@@ -1871,7 +1871,7 @@ class Tracker:
                         inertia=config.tracking_inertia,
                     )
                     ocsort_loaded = True
-                    print("✓ Loaded OC-SORT from local OC_SORT directory")
+                    print("Loaded OC-SORT from local OC_SORT directory")
                 except ImportError:
                     pass
 
@@ -1935,7 +1935,7 @@ class Tracker:
                                         inertia=config.tracking_inertia,
                                     )
                                     ocsort_loaded = True
-                                    print(f"✓ Loaded OC-SORT from {path}")
+                                    print(f"Loaded OC-SORT from {path}")
                                     break
                                 except ImportError:
                                     continue
@@ -1944,7 +1944,7 @@ class Tracker:
 
                 if ocsort_loaded:
                     self.use_advanced_tracker = True
-                    print("✓ Loaded OC-SORT tracker")
+                    print("Loaded OC-SORT tracker")
                 else:
                     raise ImportError(
                         "OC-SORT not found. Please install it using one of:\n"
@@ -2007,7 +2007,7 @@ class Tracker:
                                         frame_rate=30,
                                     )
                                     bytetrack_loaded = True
-                                    print(f"✓ Loaded ByteTrack from {path}")
+                                    print(f"Loaded ByteTrack from {path}")
                                     break
                                 except ImportError:
                                     continue
@@ -2016,7 +2016,7 @@ class Tracker:
 
                 if bytetrack_loaded:
                     self.use_advanced_tracker = True
-                    print("✓ Loaded ByteTrack tracker")
+                    print("Loaded ByteTrack tracker")
                 else:
                     raise ImportError(
                         "ByteTrack not found. Please install it using one of:\n"
@@ -2511,7 +2511,7 @@ def detect_static_objects(
     if len(static_objects) > 0:
         static_objects = object_detector._apply_nms(static_objects, config.nms_threshold)
 
-    print(f"✓ Found {len(static_objects)} static objects", flush=True)
+    print(f"Found {len(static_objects)} static objects", flush=True)
     return static_objects
 
 
@@ -2888,7 +2888,7 @@ def save_coco_annotations(
     with open(output_file, "w") as f:
         json.dump(coco_data, f, indent=2)
 
-    print(f"\n✓ Saved COCO annotations to: {output_file}", flush=True)
+    print(f"\nSaved COCO annotations to: {output_file}", flush=True)
     print(f"  Images: {len(images)}", flush=True)
     print(f"  Annotations: {len(annotations)}", flush=True)
 

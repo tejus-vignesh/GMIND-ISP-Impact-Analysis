@@ -89,6 +89,27 @@ python -m DeepLearning.train_models \
     --epochs 12
 ```
 
+### Run Inference on a Single Video
+
+```bash
+# Quick inference on a single video (no evaluation metrics)
+python -m DeepLearning.run_inference \
+    --weights yolo11m \
+    --video /path/to/video.mp4 \
+    --save-vid \
+    --conf 0.25
+
+# Use trained model weights
+python -m DeepLearning.run_inference \
+    --weights checkpoints/yolo11m/best.pt \
+    --video /path/to/video.mp4 \
+    --save-vid
+
+# For full evaluation with metrics, use:
+python -m Evaluation.core.baseline_detector_and_tracker \
+    --config DeepLearning/gmind_config.yaml
+```
+
 ### Smoke Test (Synthetic Data)
 
 ```bash
@@ -169,6 +190,31 @@ python -m DeepLearning.train_models \
     --checkpoint-dir ./models/fasterrcnn
 ```
 
+### run_inference.py
+
+Lightweight inference script for quick testing on a single video.
+
+**Arguments:**
+- `--weights PATH`: Model weights file (.pt) or pretrained model name (e.g., `yolo11m`, `yolov8m`)
+- `--video PATH`: Path to test video file
+- `--output-dir PATH`: Directory to save results (default: `inference_results`)
+- `--conf FLOAT`: Confidence threshold (default: 0.25)
+- `--device {cuda,cpu}`: Device to use (default: `cuda`)
+- `--save-vid`: Save annotated video output
+- `--save-txt`: Save predictions as text files
+- `--no-show`: Don't display video in real-time
+
+**Example:**
+```bash
+python -m DeepLearning.run_inference \
+    --weights yolo11m \
+    --video /path/to/video.mp4 \
+    --save-vid \
+    --conf 0.25
+```
+
+**Note:** This script is for quick testing/debugging. For full evaluation with metrics, use `Evaluation.core.baseline_detector_and_tracker`.
+
 ### smoke_train.py
 
 Quick validation script using synthetic data (no dataset required). Located in `tests/` folder.
@@ -243,21 +289,21 @@ adapters/__init__.py:get_model()  - Factory function, backend detection
 
 ### Current Backends
 
-#### TorchVision ✅
+#### TorchVision
 - **Location**: `torchvision_adapter.py`
 - **Models**: Faster R-CNN, Mask R-CNN, RetinaNet, SSD, FCOS, Keypoint R-CNN
 - **Status**: Production-ready, fully tested
 - **Training**: Standard PyTorch training loop (works with synthetic data)
 - **Installation**: Built-in with PyTorch
 
-#### Ultralytics ✅
+#### Ultralytics
 - **Location**: `ultralytics_adapter.py`
 - **Models**: YOLOv5, v8, v9, v10, RT-DETR (70+ variants)
 - **Status**: Production-ready, fully tested
 - **Training**: Uses Ultralytics' built-in training loop (requires dataset format)
 - **Installation**: `pip install ultralytics` or `uv pip install ultralytics`
 
-#### MMDetection ✅
+#### MMDetection
 - **Location**: `mmdet_adapter.py`
 - **Models**: Faster R-CNN, Cascade R-CNN, DETR, YOLO variants, and 50+ architectures
 - **Status**: Available and working (requires config files for model loading)
@@ -317,21 +363,21 @@ This section provides a complete reference of all available object detection mod
 
 | Backend | Models Available | Status | Training Support |
 |---------|-----------------|--------|------------------|
-| **TorchVision** | 12 models | ✅ Fully tested | ✅ Standard PyTorch loop |
-| **Ultralytics** | 70+ variants | ✅ Fully tested | ✅ Built-in training loop |
-| **MMDetection** | 25+ models | ✅ Available | ✅ Standard PyTorch loop |
+| **TorchVision** | 12 models | Fully tested | Standard PyTorch loop |
+| **Ultralytics** | 70+ variants | Fully tested | Built-in training loop |
+| **MMDetection** | 25+ models | Available | Standard PyTorch loop |
 
 **Total: 100+ models available for training**
 
 ### TorchVision Models
 
 **Backend**: `torchvision` (default)  
-**Status**: ✅ Fully integrated and tested  
+**Status**: Fully integrated and tested  
 **Installation**: Built-in with PyTorch
 
 #### Faster R-CNN (Two-stage detector)
 Best for: High accuracy, large objects
-- `fasterrcnn_resnet50_fpn` ⭐ (Recommended for beginners)
+- `fasterrcnn_resnet50_fpn` (Recommended for beginners)
 - `fasterrcnn_resnet50_fpn_v2` (Improved version)
 - `fasterrcnn_mobilenet_v3_large_fpn` (Mobile-friendly)
 - `fasterrcnn_mobilenet_v3_large_320_fpn` (Lightweight)
@@ -346,7 +392,7 @@ Best for: Imbalanced datasets
 - `retinanet_resnet50_fpn`
 - `retinanet_resnet50_fpn_v2` (Improved)
 
-⚠️ **Note**: May have issues with custom `num_classes` due to head architecture
+**Note**: May have issues with custom `num_classes` due to head architecture
 
 #### SSD - Single Shot MultiBox Detector
 Best for: Speed-accuracy tradeoff
@@ -360,7 +406,7 @@ Best for: Speed-accuracy tradeoff
 ### Ultralytics YOLO Models
 
 **Backend**: `ultralytics` (or `yolo`, `yolov8`, `yolov5`, etc.)  
-**Status**: ✅ Fully integrated  
+**Status**: Fully integrated  
 **Installation**: `pip install ultralytics` or `uv pip install ultralytics`
 
 #### YOLOv8 - Latest Generation (30 models)
@@ -371,7 +417,7 @@ Best for: Speed-accuracy tradeoff
 ```
 yolov8n     (nano, 3.2M params, 80.4% mAP)
 yolov8s     (small, 11.2M params, 86.6% mAP)
-yolov8m     (medium, 25.9M params, 88.2% mAP) ⭐ RECOMMENDED
+yolov8m     (medium, 25.9M params, 88.2% mAP) RECOMMENDED
 yolov8l     (large, 43.7M params, 88.6% mAP)
 yolov8x     (xlarge, 68.2M params, 88.8% mAP)
 ```
@@ -419,7 +465,7 @@ rtdetr-l, rtdetr-x
 ### MMDetection Models
 
 **Backend**: `mmdet` or `mmdetection`  
-**Status**: ✅ Available (requires config files for model loading)  
+**Status**: Available (requires config files for model loading)  
 **Installation**: 
 ```bash
 # Using pip
@@ -440,7 +486,7 @@ MMDetection is a comprehensive detection framework with **50+ model architecture
 
 #### Two-Stage Detectors
 ```
-faster_rcnn         - Fast R-CNN with region proposals ⭐
+faster_rcnn         - Fast R-CNN with region proposals
 cascade_rcnn        - Cascaded Faster R-CNN
 mask_rcnn           - R-CNN with segmentation
 hybrid_task_cascade - Combines detection and segmentation
@@ -464,7 +510,7 @@ centernet           - Anchor-free centerness
 
 #### Transformer-Based Detectors
 ```
-detr                - Detection Transformer (base) ⭐
+detr                - Detection Transformer (base)
 deformable_detr     - Deformable attention modules
 dino                - DINO: DETR with improved deNoise and Optimization
 conditional_detr    - Conditional spatial queries
@@ -488,27 +534,27 @@ reppoints           - Representation by points
 - `yolov5n` - Proven speed
 - `ssdlite320_mobilenet_v3_large` - Lightweight
 
-**🎯 Accuracy Priority**
+**Accuracy Priority**
 - `yolov8x` - Highest accuracy YOLO
 - `yolov9e` - Best YOLOv9
 - `faster_rcnn_resnet50_fpn` - Traditional high accuracy
 - `mask_rcnn_resnet50_fpn` - With segmentation
 
-**⚖️ Balanced (Recommended)**
-- `yolov8m` ⭐ - Best overall choice
+**Balanced (Recommended)**
+- `yolov8m` - Best overall choice
 - `fasterrcnn_resnet50_fpn` - TorchVision standard
 - `yolov9m` - Improved YOLO
 
-**📱 Mobile/Edge Devices**
+**Mobile/Edge Devices**
 - `yolov8n` - Nano (3.2M params)
 - `yolov5n` - Small
 - `fasterrcnn_mobilenet_v3_large_fpn` - Mobile backbone
 
-**🔄 Transfer Learning**
+**Transfer Learning**
 - Any model with pretrained weights (all support pretrained=True)
 - Smaller models fine-tune faster (yolov8n, yolov5s)
 
-**🎨 Instance Segmentation**
+**Instance Segmentation**
 - `maskrcnn_resnet50_fpn` - TorchVision
 - `yolov8m-seg` - YOLO segmentation
 - Various MMDetection segmentation models
@@ -523,7 +569,7 @@ reppoints           - Representation by points
 |---------|-------------------|--------|
 | < 100 images | `yolov8n`, `yolov5n` | Small model prevents overfitting |
 | 100-1K images | `yolov8s`, `fasterrcnn_mobilenet_v3` | Good balance |
-| 1K-10K images | `yolov8m` ⭐, `fasterrcnn_resnet50` | Standard choice |
+| 1K-10K images | `yolov8m`, `fasterrcnn_resnet50` | Standard choice |
 | 10K+ images | `yolov8l`, `yolov9m` | Larger models |
 | 100K+ images | `yolov8x`, `mask_rcnn_resnet50` | Full capacity |
 

@@ -1,3 +1,7 @@
+# =============================================================================
+# Python
+# =============================================================================
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -8,7 +12,6 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-env/
 build/
 develop-eggs/
 dist/
@@ -20,9 +23,16 @@ lib64/
 parts/
 sdist/
 var/
+wheels/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
 
 # Installer logs
 pip-log.txt
@@ -38,104 +48,333 @@ htmlcov/
 nosetests.xml
 coverage.xml
 *.cover
+*.py,cover
 .hypothesis/
 .pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
 
+# IPython
+profile_default/
+ipython_config.py
+
 # pyenv
 .python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+.pdm-python
+.pdm-build/
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
 
 # mypy
 .mypy_cache/
 .dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# =============================================================================
+# IDEs and Editors
+# =============================================================================
 
 # VS Code
 .vscode/
+*.code-workspace
 
-# Mac
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# =============================================================================
+# Operating System Files
+# =============================================================================
+
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
 
 # Windows
 Thumbs.db
-Desktop.ini
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
 
-# Temporary files
-*_temp/
-*_bench_temp/
-*.tmp
-*.log
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
 
-# Output
+# =============================================================================
+# Machine Learning / Deep Learning
+# =============================================================================
+
+# Model weights and checkpoints (large files, downloaded automatically)
+*.pt
+*.pth
+*.pkl
+*.h5
+*.hdf5
+*.ckpt
+*.weights
+*.pb
+*.onnx
+*.tflite
+*.tfl
+*.mlmodel
+*.coreml
+yolov8*.pt
+yolov11*.pt
+yolov12*.pt
+checkpoints/
+saved_models/
+models/weights/
+
+# Dome-DETR model files (download separately - see README)
+Dome-L-VisDrone*.pth
+Dome-L-VisDrone*.yml
+Dome-DETR/
+
+# TensorBoard logs
+runs/
+logs/
+tensorboard_logs/
+*.tfevents.*
+
+# Weights & Biases
+wandb/
+
+# MLflow
+mlruns/
+
+# =============================================================================
+# Project-Specific Output Files
+# =============================================================================
+
+# Video files (output from ISP pipeline)
 *.avi
 *.mp4
+*.mov
+*.mkv
+*.flv
+*.wmv
+
+# Image files (processed output, not source/test images)
+# Note: Keep test images and documentation images in repo
 *.jpg
 *.jpeg
+*.png
 *.bmp
 *.tif
 *.tiff
+*.gif
+*.webp
+# But allow documentation and test images in specific directories
+!misc/*.png
+!misc/*.jpg
+!misc/*.jpeg
+!docs/*.png
+!docs/*.jpg
+!docs/*.jpeg
+!tests/**/*.png
+!tests/**/*.jpg
+!tests/**/*.jpeg
 
-# User data
-*.sqlite3
-*.db
-
-# Ignore compressed or raw data
+# Compressed data files
 *.zip
 *.tar.gz
 *.tar
+*.gz
 *.7z
+*.rar
+*.bz2
+
+# Raw data files
 *.raw
 *.bin
 *.dat
 
-# Ignore test output
-output_test.png
+# Database files
+*.sqlite3
+*.db
+*.sqlite
 
-# Ignore wheel and pip
-*.whl
-pip-wheel-metadata/
-
-# Ignore random scripts output
-RandomScripts/*_output/
-
-# Ignore sensor toolbox cache
-Sensor_Calibration_Toolbox/__pycache__/
-
-# Ignore logs
-*.log
-
-# Ignore ffmpeg temp files
-ffmpeg*temp*
-video_processing/
-
-# Model weights (downloaded automatically)
-*.pt
-yolov8*.pt
-
-# Training checkpoints
-checkpoints/
-*.pth
-
-# Output directories
+# Temporary and output directories
+*_temp/
+*_bench_temp/
+*.tmp
 output_*/
 output_*_test/
 output_*_fixed/
+video_processing/
+ffmpeg*temp*
+output_test.png
 
-# Old/unused files
-old_venv_packages.txt
-
-# Folders starting with .
-.*/
-
-# uv lock file
-uv.lock
+# Random scripts output
+RandomScripts/*_output/
 
 # Sample datasets (large, can be downloaded separately)
 coco_sample/
 
-# Model weights (auto-download if not present)
-# *.pt already listed above
+# =============================================================================
+# Build and Dependency Management
+# =============================================================================
 
-# Third-party libraries (can be installed via pip)
-Annotation/OC_SORT/
+# uv lock file
+uv.lock
+
+# pip wheel metadata
+pip-wheel-metadata/
+
+# Old/unused files
+old_venv_packages.txt
+
+# =============================================================================
+# Calibration and Sensor Toolbox
+# =============================================================================
+
+# Sensor toolbox cache
+Sensor_Calibration_Toolbox/__pycache__/
+Calibration/__pycache__/
+
+# =============================================================================
+# Git and Version Control
+# =============================================================================
+
+# Git LFS
+.gitattributes
+# Note: .gitattributes should typically be committed, but if you have
+# a local override, uncomment the line above
+
+# =============================================================================
+# Security and Secrets
+# =============================================================================
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.cert
+secrets/
+.secrets
+
+# API keys and credentials
+config.ini
+credentials.json
+*.credentials

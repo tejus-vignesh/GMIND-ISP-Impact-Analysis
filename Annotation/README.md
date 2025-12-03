@@ -406,6 +406,27 @@ Typical performance: 5-30 FPS depending on video resolution, frame sampling rate
 
 Part of the GMIND SDK project.
 
+## Additional Tools
+
+### `lidar_object_detection.py`
+LIDAR-based object detection and visualization tool.
+
+**Features:**
+- Detects 3D objects in LIDAR point clouds using background subtraction and clustering
+- Projects detections onto camera images
+- Generates 3D bounding boxes for detected objects
+- Supports visualization of detected objects
+
+**Usage:**
+```bash
+python Annotation/lidar_object_detection.py --calib_path path/to/sensor_calibration.txt --pcd_folder path/to/pcd/folder --camera_name FLIR8.9 --lidar_name Velodyne
+```
+
+**Dependencies:**
+- SciPy (for KDTree and clustering)
+- Matplotlib (for visualization)
+- NumPy, OpenCV
+
 ## Author
 
 GMIND SDK Development Team

@@ -2,3 +2,6 @@
 	path = Calibration
 	url = https://github.com/RoshanGeorge19/Sensor_Calibration_Toolbox.git
 	branch = PYQT_Upgrade
+[submodule "OC_SORT"]
+	path = OC_SORT
+	url = https://github.com/noahcao/OC_SORT.git

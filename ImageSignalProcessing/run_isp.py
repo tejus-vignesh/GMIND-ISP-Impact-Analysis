@@ -25,6 +25,7 @@
 #
 
 import glob
+import logging
 import multiprocessing
 import os
 import shutil
@@ -38,6 +39,12 @@ import rawpy
 from pipeline import Pipeline
 from tqdm import tqdm
 from utils.yacs import Config
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 # Set the default config directory globally
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "configs")
@@ -108,12 +115,10 @@ def process_image_dict(image_dict, out_dir):
             isinstance(image_list, list) and len(image_list) == 1 and os.path.isdir(image_list[0])
         ):
             input_dir = image_list if isinstance(image_list, str) else image_list[0]
-            print(
-                f"\n[DEBUG] Expanding directory for set '{set_name}':\n    Input directory: {input_dir}"
-            )
+            logger.debug(f"Expanding directory for set '{set_name}': Input directory: {input_dir}")
             image_list = sorted(glob.glob(os.path.join(input_dir, "*.png")))
-        print(
-            f"\n[DEBUG] Image list for set '{set_name}':\n    {len(image_list)} images\n    First 5: {image_list[:5] if image_list else '[]'}\n    ...\n"
+        logger.debug(
+            f"Image list for set '{set_name}': {len(image_list)} images, First 5: {image_list[:5] if image_list else '[]'}"
         )
         # Determine output directory
         if out_dir == "Parent" and image_list:
@@ -123,8 +128,8 @@ def process_image_dict(image_dict, out_dir):
         else:
             this_out_dir = out_dir
         os.makedirs(this_out_dir, exist_ok=True)
-        print(
-            f"[DEBUG] Output directory for set '{set_name}':\n    Config: {cfg_path}\n    Output PNGs: {os.path.abspath(os.path.join(this_out_dir, f'{set_name}-HV'))}\n    Output video: {os.path.abspath(os.path.join(this_out_dir, f'{set_name}.mp4')) if SAVE_VIDEO else '[SKIPPED]'}\n"
+        logger.debug(
+            f"Output directory for set '{set_name}': Config: {cfg_path}, Output PNGs: {os.path.abspath(os.path.join(this_out_dir, f'{set_name}-HV'))}, Output video: {os.path.abspath(os.path.join(this_out_dir, f'{set_name}.mp4')) if SAVE_VIDEO else '[SKIPPED]'}"
         )
         pipeline = Pipeline(Config(cfg_path))
         save_dir = os.path.join(this_out_dir, f"{set_name}-HV")
@@ -133,8 +138,8 @@ def process_image_dict(image_dict, out_dir):
             image_list, save_dir, load_bayer, suffixes="", num_processes=NUM_PROCESSES
         )
         images_out = glob.glob(f"{save_dir}/*.png")
-        print(
-            f"[DEBUG] Processed PNGs for set '{set_name}':\n    {len(images_out)} images\n    First 5: {images_out[:5] if images_out else '[]'}\n    ...\n"
+        logger.debug(
+            f"Processed PNGs for set '{set_name}': {len(images_out)} images, First 5: {images_out[:5] if images_out else '[]'}"
         )
         img_info = [
             [os.path.basename(img), float(os.path.basename(img).split("-")[0])]
@@ -150,8 +155,8 @@ def process_image_dict(image_dict, out_dir):
         h, w = first_img.shape[:2]
         if SAVE_VIDEO:
             out_video_path = os.path.join(this_out_dir, f"{set_name}.mp4")
-            print(
-                f"[DEBUG] Starting video writing for set '{set_name}':\n    Output: {out_video_path}\n    Frame size: {w}x{h}\n    Framerate: {VIDEO_FRAMERATE}\n"
+            logger.debug(
+                f"Starting video writing for set '{set_name}': Output: {out_video_path}, Frame size: {w}x{h}, Framerate: {VIDEO_FRAMERATE}"
             )
             process = (
                 ffmpeg.input(
@@ -170,8 +175,8 @@ def process_image_dict(image_dict, out_dir):
             frame_path = os.path.join(save_dir, img[0])
             frame = cv2.imread(frame_path)
             if frame.shape[:2] != (h, w):
-                print(
-                    f"[DEBUG]    Resizing frame {os.path.basename(frame_path)}: {frame.shape[:2]} -> ({h}, {w})"
+                logger.debug(
+                    f"Resizing frame {os.path.basename(frame_path)}: {frame.shape[:2]} -> ({h}, {w})"
                 )
                 frame = cv2.resize(frame, (w, h))
             if SAVE_VIDEO:
@@ -179,12 +184,12 @@ def process_image_dict(image_dict, out_dir):
         if SAVE_VIDEO:
             process.stdin.close()
             process.wait()
-            print(f"[DEBUG] Video saved for set '{set_name}': {out_video_path}\n")
+            logger.debug(f"Video saved for set '{set_name}': {out_video_path}")
 
         if not SAVE_PNG:
-            print(f"[DEBUG] Removing intermediate PNG directory for set '{set_name}': {save_dir}\n")
+            logger.debug(f"Removing intermediate PNG directory for set '{set_name}': {save_dir}")
             shutil.rmtree(save_dir)
-    print(f"\n[DEBUG] All videos saved to: {out_dir if out_dir != 'Parent' else this_out_dir}\n")
+    logger.info(f"All videos saved to: {out_dir if out_dir != 'Parent' else this_out_dir}")
 
 
 def process_and_show_single_image(image_path, config_path, out_path=None):
@@ -203,7 +208,7 @@ def process_and_show_single_image(image_path, config_path, out_path=None):
     # Find the output image
     out_imgs = glob.glob(f"{temp_dir}/*.png")
     if not out_imgs:
-        print("No output image generated.")
+        logger.warning("No output image generated.")
         shutil.rmtree(temp_dir)
         return
     img = cv2.imread(out_imgs[0])
@@ -212,7 +217,7 @@ def process_and_show_single_image(image_path, config_path, out_path=None):
     cv2.destroyAllWindows()
     if out_path:
         cv2.imwrite(out_path, img)
-        print(f"Saved processed image to {out_path}")
+        logger.info(f"Saved processed image to {out_path}")
     shutil.rmtree(temp_dir)
 
 
@@ -237,7 +242,7 @@ def find_optimal_num_processes(
     test_paths = raw_paths[:test_count]
     best_time = float("inf")
     best_proc = 1
-    print("[BENCH] Benchmarking process counts...")
+    logger.info("Benchmarking process counts...")
     for n_proc in [4, 6, 8, max_procs]:
         n_proc = min(n_proc, max_procs)
         if n_proc < 1:
@@ -248,11 +253,11 @@ def find_optimal_num_processes(
             test_paths, save_dir, load_raw_fn, num_processes=n_proc, show_progress=True
         )
         elapsed = time.time() - start
-        print(f"[BENCH] {n_proc} processes: {elapsed:.2f}s")
+        logger.info(f"{n_proc} processes: {elapsed:.2f}s")
         if elapsed < best_time:
             best_time = elapsed
             best_proc = n_proc
-    print(f"[BENCH] Optimal number of processes: {best_proc}")
+    logger.info(f"Optimal number of processes: {best_proc}")
     return best_proc
 
 
@@ -282,7 +287,7 @@ def auto_set_num_processes(image_dict, config_dir, load_raw_fn, pipeline_class):
         test_count=20,
     )
     shutil.rmtree(temp_bench_dir)
-    print(f"[INFO] Using NUM_PROCESSES = {NUM_PROCESSES} for batch processing.\n")
+    logger.info(f"Using NUM_PROCESSES = {NUM_PROCESSES} for batch processing.")
 
 
 if __name__ == "__main__":

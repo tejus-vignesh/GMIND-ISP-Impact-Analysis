@@ -1,5 +1,7 @@
 # Fast Open Image Signal Processor (fast-openISP)
 
+> **Note**: This implementation is based on [fast-openISP](https://github.com/QiuJueqin/fast-openISP) by Qiu Jueqin, which has been heavily modified and integrated into the GMIND-SDK for GMIND-specific image signal processing workflows.
+
 As told by its name, fast-openISP is a **faster** (and bugs-fixed) re-implementation of
 the [openISP](https://github.com/cruxopen/openISP) project.
 
@@ -33,13 +35,31 @@ Here is the running time in my Ryzen 7 1700 8-core 3.00GHz machine with the 1920
 
 # Usage
 
-Clone this repo and run
+## Original fast-openISP
+
+Clone the original repo and run:
 
 ```
 python demo.py
 ```
 
 The ISP outputs will be saved to `./output` directory.
+
+## GMIND-SDK Version
+
+The GMIND-SDK version uses `run_isp.py` for flexible RAW image/video batch processing:
+
+```bash
+python run_isp.py
+```
+
+See the script header in `run_isp.py` for usage instructions. This script provides:
+- Batch processing of multiple sets of images in parallel
+- Per-set configuration support
+- Direct ffmpeg streaming for video output
+- Auto-tuning for optimal multiprocessing
+
+## Pipeline Execution
 
 The only required package for pipeline execution is `numpy`. `opencv-python` and `scikit-image` are required only for 
 data IO.
@@ -72,6 +92,16 @@ in [`./configs`](./configs), one file per camera.
 
 # License
 
-Copyright 2021 Qiu Jueqin.
+Original fast-openISP code:
+- Copyright 2021 Qiu Jueqin.
+- Licensed under [MIT](http://opensource.org/licenses/MIT).
 
-Licensed under [MIT](http://opensource.org/licenses/MIT).
+GMIND-SDK modifications and additions:
+- Copyright (c) GMIND-SDK contributors.
+- Licensed under [MIT](http://opensource.org/licenses/MIT).
+
+# Attribution
+
+This code is based on [fast-openISP](https://github.com/QiuJueqin/fast-openISP) by [Qiu Jueqin](https://github.com/QiuJueqin), which has been heavily modified and extended for the GMIND-SDK project. The original fast-openISP implementation provides a fast, NumPy-based re-implementation of the openISP project, achieving over 300x speedup compared to the original C-style implementation.
+
+A fork of the original repository is maintained at [daramolloy/fast-openISP](https://github.com/daramolloy/fast-openISP) for attribution and code lineage visibility.

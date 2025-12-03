@@ -22,6 +22,7 @@ Example:
 """
 
 import json
+import logging
 import re
 import time
 from collections import Counter
@@ -33,6 +34,12 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 import torch
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -222,7 +229,7 @@ def parse_camera_intrinsics_from_calibration(
 
     calib_path = Path(calib_path)
     if not calib_path.exists():
-        print(f"⚠️  Warning: Calibration file not found: {calib_path}", flush=True)
+        logger.warning(f"Calibration file not found: {calib_path}")
         return None
 
     # Try to extract camera name from video if not provided
@@ -231,7 +238,7 @@ def parse_camera_intrinsics_from_calibration(
         extracted = extract_camera_name_from_video(video_path)
         if extracted:
             search_camera_name = extracted
-            print(f"📹 Extracted camera name from video: '{extracted}'", flush=True)
+            logger.info(f"Extracted camera name from video: '{extracted}'")
 
     try:
         with open(calib_path, "r") as f:
@@ -249,7 +256,7 @@ def parse_camera_intrinsics_from_calibration(
                     all_cameras.append(name)
             i += 1
 
-        print(f"📋 Found cameras in calibration file: {all_cameras}", flush=True)
+        logger.debug(f"Found cameras in calibration file: {all_cameras}")
 
         # Second pass: find matching camera and parse intrinsics
         i = 0
@@ -264,10 +271,10 @@ def parse_camera_intrinsics_from_calibration(
                     # Use first camera found
                     if matched_camera is None:
                         matched_camera = name
-                        print(f"📷 Using first camera found: '{name}'", flush=True)
+                        logger.info(f"Using first camera found: '{name}'")
                 elif match_camera_name(search_camera_name, name):
                     matched_camera = name
-                    print(f"✓ Matched camera: '{search_camera_name}' -> '{name}'", flush=True)
+                    logger.info(f"Matched camera: '{search_camera_name}' -> '{name}'")
 
                 # Read intrinsics
                 intrinsics = {}
@@ -316,18 +323,10 @@ def parse_camera_intrinsics_from_calibration(
                                 # Only use if at least first coefficient is non-zero
                                 if any(abs(v) > 1e-6 for v in dist_values):
                                     dist_coeffs = np.array(dist_values[:5], dtype=np.float32)
-                                    print(
-                                        f"✓ Parsed distortion coefficients: {dist_coeffs}",
-                                        flush=True,
-                                    )
+                                    logger.debug(f"Parsed distortion coefficients: {dist_coeffs}")
 
-                            print(
-                                f"✓ Parsed camera intrinsics for '{name}' from {calib_path}",
-                                flush=True,
-                            )
-                            print(
-                                f"  fx={fx:.2f}, fy={fy:.2f}, cx={cx:.2f}, cy={cy:.2f}", flush=True
-                            )
+                            logger.info(f"Parsed camera intrinsics for '{name}' from {calib_path}")
+                            logger.debug(f"fx={fx:.2f}, fy={fy:.2f}, cx={cx:.2f}, cy={cy:.2f}")
                             return camera_matrix, dist_coeffs
                     else:
                         # Continue searching if intrinsics not found for this camera
@@ -339,22 +338,18 @@ def parse_camera_intrinsics_from_calibration(
             i += 1
 
         if matched_camera is None:
-            print(
-                f"⚠️  Warning: No matching camera found in calibration file: {calib_path}",
-                flush=True,
-            )
+            logger.warning(f"No matching camera found in calibration file: {calib_path}")
             if search_camera_name:
-                print(f"  Searched for: '{search_camera_name}'", flush=True)
-            print(f"  Available cameras: {all_cameras}", flush=True)
+                logger.warning(f"Searched for: '{search_camera_name}'")
+            logger.warning(f"Available cameras: {all_cameras}")
         else:
-            print(
-                f"⚠️  Warning: Could not parse intrinsics for camera '{matched_camera}' from {calib_path}",
-                flush=True,
+            logger.warning(
+                f"Could not parse intrinsics for camera '{matched_camera}' from {calib_path}"
             )
         return None, None
 
     except Exception as e:
-        print(f"⚠️  Warning: Failed to parse calibration file {calib_path}: {e}", flush=True)
+        logger.warning(f"Failed to parse calibration file {calib_path}: {e}")
         return None
 
 
@@ -583,7 +578,7 @@ class ObjectDetector:
 
     def _load_model(self):
         """Load detection model (Dome-DETR or YOLOv12x)."""
-        print(f"Loading object detection model: {self.config.detector_model}...")
+        logger.info(f"Loading object detection model: {self.config.detector_model}...")
 
         if (
             self.config.detector_model.lower() == "dome-detr"
@@ -712,7 +707,7 @@ class ObjectDetector:
                 if hasattr(self.model, "eval"):
                     self.model.eval()
                 self.backend = "dome-detr"
-                print(f"✓ Loaded Dome-DETR from {checkpoint}")
+                logger.info(f"Loaded Dome-DETR from {checkpoint}")
             except ImportError as e:
                 raise RuntimeError(
                     f"MMDetection is not installed or init_detector is not available: {e}\n"
@@ -739,7 +734,7 @@ class ObjectDetector:
                 if hasattr(self.model, "eval"):
                     self.model.eval()
                 self.backend = "ultralytics"
-                print("✓ Loaded YOLOv12x")
+                logger.info("Loaded YOLOv12x")
             except Exception as e:
                 raise RuntimeError(f"Failed to load YOLOv12x model: {e}")
 
@@ -990,10 +985,10 @@ class ObjectDetector:
                     )
                 )
         except Exception as e:
-            print(f"Warning: Error parsing Dome-DETR results: {e}")
+            logger.warning(f"Error parsing Dome-DETR results: {e}")
             import traceback
 
-            traceback.print_exc()
+            logger.debug(traceback.format_exc())
 
         return detections
 
@@ -1040,10 +1035,10 @@ class ObjectDetector:
                 results = self.model.predict(frame, conf=conf_threshold, verbose=False)
                 return self._parse_ultralytics_results(results, conf_threshold)
         except Exception as e:
-            print(f"Warning: Detection failed: {e}")
+            logger.warning(f"Detection failed: {e}")
             import traceback
 
-            traceback.print_exc()
+            logger.debug(traceback.format_exc())
             return []
 
 
@@ -1089,7 +1084,7 @@ class Tracker:
                     inertia=config.tracking_inertia,
                 )
                 ocsort_loaded = True
-                print("✓ Loaded OC-SORT from local directory")
+                logger.info("Loaded OC-SORT from local directory")
             except ImportError:
                 pass
 
@@ -1108,7 +1103,7 @@ class Tracker:
                         inertia=config.tracking_inertia,
                     )
                     ocsort_loaded = True
-                    print("✓ Loaded OC-SORT")
+                    logger.info("Loaded OC-SORT")
                 except ImportError:
                     pass
 
@@ -1220,10 +1215,10 @@ class Tracker:
 
             return tracked_objects
         except Exception as e:
-            print(f"Warning: OC-SORT update failed: {e}")
+            logger.warning(f"OC-SORT update failed: {e}")
             import traceback
 
-            traceback.print_exc()
+            logger.debug(traceback.format_exc())
             return []
 
     @staticmethod
@@ -1380,9 +1375,8 @@ def save_coco_annotations(
     with open(output_file, "w") as f:
         json.dump(coco_data, f, indent=2)
 
-    print(f"\n✓ Saved COCO annotations to: {output_file}", flush=True)
-    print(f"  Images: {len(images)}", flush=True)
-    print(f"  Annotations: {len(annotations)}", flush=True)
+    logger.info(f"Saved COCO annotations to: {output_file}")
+    logger.info(f"Images: {len(images)}, Annotations: {len(annotations)}")
 
 
 def process_video(video_path: str, config: Config):
@@ -1395,12 +1389,12 @@ def process_video(video_path: str, config: Config):
 
     video_path = Path(video_path)
     if not video_path.exists():
-        print(f"Error: Video file not found: {video_path}")
+        logger.error(f"Video file not found: {video_path}")
         return
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        print(f"Error: Could not open video file: {video_path}")
+        logger.error(f"Could not open video file: {video_path}")
         return
 
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -1413,22 +1407,21 @@ def process_video(video_path: str, config: Config):
         calculated_skip = max(1, round(fps / config.target_processing_fps))
         config.process_every_n_frames = calculated_skip
         actual_processing_fps = fps / calculated_skip
-        print(
-            f"Auto-calculated frame skip: {calculated_skip} (targeting {config.target_processing_fps} fps)",
-            flush=True,
+        logger.info(
+            f"Auto-calculated frame skip: {calculated_skip} (targeting {config.target_processing_fps} fps)"
         )
-        print(f"Actual processing rate: {actual_processing_fps:.2f} fps", flush=True)
+        logger.info(f"Actual processing rate: {actual_processing_fps:.2f} fps")
 
-    print(f"\nVideo: {video_path.name}", flush=True)
-    print(f"Resolution: {width}x{height}", flush=True)
-    print(f"Video FPS: {fps:.2f}", flush=True)
-    print(f"Processing: every {config.process_every_n_frames} frame(s)", flush=True)
-    print(f"Total frames: {total_frames}", flush=True)
-    print(f"Detection: {config.detector_model}", flush=True)
+    logger.info(f"Video: {video_path.name}")
+    logger.info(f"Resolution: {width}x{height}")
+    logger.info(f"Video FPS: {fps:.2f}")
+    logger.info(f"Processing: every {config.process_every_n_frames} frame(s)")
+    logger.info(f"Total frames: {total_frames}")
+    logger.info(f"Detection: {config.detector_model}")
     if config.detector_model.lower() == "dome-detr":
-        print(f"  Config: {config.detector_config_file}", flush=True)
-        print(f"  Checkpoint: {config.detector_checkpoint}", flush=True)
-    print(f"Tracking: {config.tracking_method}", flush=True)
+        logger.info(f"  Config: {config.detector_config_file}")
+        logger.info(f"  Checkpoint: {config.detector_checkpoint}")
+    logger.info(f"Tracking: {config.tracking_method}")
 
     # Parse camera intrinsics and distortion coefficients from calibration file if provided
     camera_matrix = config.camera_matrix
@@ -1470,22 +1463,14 @@ def process_video(video_path: str, config: Config):
         if dist_coeffs is not None:
             config.dist_coeffs = dist_coeffs
 
-    # Print depth estimation method
+    # Log depth estimation method
     if config.enable_depth_estimation:
-        print(
-            f"✓ 3D location computation enabled: Geometric (ground plane intersection)", flush=True
-        )
-        print(
-            f"  Camera height: {config.camera_height}m, Pitch: {config.camera_pitch_deg}°",
-            flush=True,
-        )
+        logger.info("3D location computation enabled: Geometric (ground plane intersection)")
+        logger.info(f"Camera height: {config.camera_height}m, Pitch: {config.camera_pitch_deg}°")
         if config.camera_matrix is not None:
-            print(f"  Using camera intrinsics for geometric projection", flush=True)
+            logger.info("Using camera intrinsics for geometric projection")
         else:
-            print(
-                f"  ⚠️  Warning: Camera intrinsics not available, geometric depth will fail",
-                flush=True,
-            )
+            logger.warning("Camera intrinsics not available, geometric depth will fail")
 
     object_detector = ObjectDetector(config)
     tracker = Tracker(config)
@@ -1823,7 +1808,7 @@ def process_video(video_path: str, config: Config):
                 if xyz_info:
                     progress_msg += f" | 3D: {', '.join(xyz_info)}"
 
-            print(progress_msg, flush=True)
+            logger.info(progress_msg)
 
     cap.release()
     if not config.headless:
@@ -1844,11 +1829,10 @@ def process_video(video_path: str, config: Config):
 
     avg_inference_time = np.mean(inference_times) if inference_times else 0
     if avg_inference_time > 0:
-        print(
-            f"\nAverage inference time: {avg_inference_time*1000:.2f}ms ({1.0/avg_inference_time:.1f} FPS)",
-            flush=True,
+        logger.info(
+            f"Average inference time: {avg_inference_time*1000:.2f}ms ({1.0/avg_inference_time:.1f} FPS)"
         )
-    print(f"Total frames processed: {frame_idx}", flush=True)
+    logger.info(f"Total frames processed: {frame_idx}")
 
 
 if __name__ == "__main__":

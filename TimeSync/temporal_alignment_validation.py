@@ -594,9 +594,9 @@ def plot_xy_plane_over_time_multicam(
                 video_frame_mappings[camera_name] = build_video_frame_mapping(
                     camera_name, sorted_frames, metadata
                 )
-                print(f"  ✓ Loaded video for {camera_name}")
+                print(f"  Loaded video for {camera_name}")
             else:
-                print(f"  ✗ No video found for {camera_name}")
+                print(f"  No video found for {camera_name}")
 
         if len(video_captures) > 0:
             print(f"  Loaded {len(video_captures)} video file(s)")
@@ -807,7 +807,7 @@ def plot_xy_plane_over_time_multicam(
 
     if exclude_static_objects and len(static_object_tracks) > 0:
         print(
-            f"   🔍 Identified {len(static_object_tracks)} static object tracks (threshold: {static_object_threshold_meters}m)"
+            f"   Identified {len(static_object_tracks)} static object tracks (threshold: {static_object_threshold_meters}m)"
         )
         print(f"      (Excluding from alignment metrics)")
 
@@ -1665,7 +1665,7 @@ def plot_xy_plane_over_time_multicam(
             exclude_static_objects = not exclude_static_objects
             status_msg = "ENABLED" if exclude_static_objects else "DISABLED"
             print(f"\n{'='*60}")
-            print(f"   🔄 Static object exclusion: {status_msg}")
+            print(f"   Static object exclusion: {status_msg}")
             if exclude_static_objects:
                 print(f"      Threshold: {static_object_threshold_meters}m")
                 print(f"      Excluding {len(static_object_tracks)} static tracks")
@@ -1680,7 +1680,7 @@ def plot_xy_plane_over_time_multicam(
         elif event.key == "f" or event.key == "F":
             # Check if FLIR 8.9MP is available as reference
             if "FLIR 8.9MP" not in camera_names_sorted:
-                print("\n⚠️  FLIR 8.9MP not found. Cannot perform alignment search.")
+                print("\nWarning: FLIR 8.9MP not found. Cannot perform alignment search.")
                 return
 
             # Determine which camera(s) to search
@@ -1688,17 +1688,17 @@ def plot_xy_plane_over_time_multicam(
                 # If FLIR 8.9MP is active, search all other cameras
                 cameras_to_search = [cam for cam in camera_names_sorted if cam != "FLIR 8.9MP"]
                 if len(cameras_to_search) == 0:
-                    print("\n⚠️  No other cameras to search.")
+                    print("\nWarning: No other cameras to search.")
                     return
                 print(
-                    f"\n🔍 Searching for best alignment (FLIR 8.9MP = reference, adjusting: {', '.join(cameras_to_search)})..."
+                    f"\nSearching for best alignment (FLIR 8.9MP = reference, adjusting: {', '.join(cameras_to_search)})..."
                 )
                 search_camera = cameras_to_search[0]  # Search first other camera
             else:
                 # Search the active camera (FLIR 8.9MP stays fixed)
                 search_camera = active_cam
                 print(
-                    f"\n🔍 Searching for best alignment (FLIR 8.9MP = reference, adjusting: {search_camera})..."
+                    f"\nSearching for best alignment (FLIR 8.9MP = reference, adjusting: {search_camera})..."
                 )
 
             print(f"   Current {search_camera} offset: {camera_frame_offsets[search_camera]:+d}")
@@ -1713,7 +1713,7 @@ def plot_xy_plane_over_time_multicam(
             max_search_range = 50  # Search +/- 100 frames
 
             if len(search_camera_sorted_frames) == 0:
-                print(f"   ⚠️  No frames available for {search_camera}")
+                print(f"   Warning: No frames available for {search_camera}")
                 return
 
             # Calculate how far we can search backward and forward
@@ -1747,7 +1747,7 @@ def plot_xy_plane_over_time_multicam(
                 )
 
             if len(search_range) == 0:
-                print(f"   ⚠️  Cannot search: already at frame boundary")
+                print(f"   Warning: Cannot search: already at frame boundary")
                 return
 
             best_offset = original_offset
@@ -1941,13 +1941,13 @@ def plot_xy_plane_over_time_multicam(
                     alignment_plot_figure.canvas.flush_events()
 
                 plt.show(block=False)  # Non-blocking so main window stays responsive
-                print(f"   📈 Opened/updated distance metrics plot window")
+                print(f"   Opened/updated distance metrics plot window")
 
             # Update to best offset found
             if best_offset != original_offset:
                 camera_frame_offsets[search_camera] = best_offset
                 print(
-                    f"✅ Found best alignment for {search_camera} at offset: {best_offset:+d} (metric: {best_metric_type} = {best_metric_value:.3f}m)"
+                    f"Found best alignment for {search_camera} at offset: {best_offset:+d} (metric: {best_metric_type} = {best_metric_value:.3f}m)"
                 )
 
                 # Print which frame indices are now aligned
@@ -1974,7 +1974,7 @@ def plot_xy_plane_over_time_multicam(
                     flir89_actual_frame = flir89_base_frame_id + camera_frame_offsets["FLIR 8.9MP"]
                     search_actual_frame = search_base_frame_id + best_offset
 
-                    print(f"\n📊 Frame Alignment:")
+                    print(f"\nFrame Alignment:")
                     print(
                         f"   FLIR 8.9MP: frame index {flir89_frame_idx} → frame ID {flir89_actual_frame}"
                     )
@@ -1996,7 +1996,7 @@ def plot_xy_plane_over_time_multicam(
             else:
                 camera_frame_offsets[search_camera] = original_offset  # Restore if no change
                 print(
-                    f"✓ Current {search_camera} offset is already best: {best_offset:+d} (metric: {best_metric_type} = {best_metric_value:.3f}m)"
+                    f"Current {search_camera} offset is already best: {best_offset:+d} (metric: {best_metric_type} = {best_metric_value:.3f}m)"
                 )
 
                 # Still print the alignment info
@@ -2021,7 +2021,7 @@ def plot_xy_plane_over_time_multicam(
                     flir89_actual_frame = flir89_base_frame_id + camera_frame_offsets["FLIR 8.9MP"]
                     search_actual_frame = search_base_frame_id + best_offset
 
-                    print(f"\n📊 Current Frame Alignment:")
+                    print(f"\nCurrent Frame Alignment:")
                     print(
                         f"   FLIR 8.9MP: frame index {flir89_frame_idx} → frame ID {flir89_actual_frame}"
                     )

@@ -72,7 +72,7 @@ python TimeSync/temporal_alignment_validation.py --annotation_file path/to/video
 - Shows object tracks (connects points by track_id)
 - Useful for seeing object trajectories
 
-### 4. **Multi-Camera Time Synchronization (Main Feature)** ⭐
+### 4. **Multi-Camera Time Synchronization (Main Feature)**
 ```bash
 python TimeSync/temporal_alignment_validation.py \
     --plot_xy \
