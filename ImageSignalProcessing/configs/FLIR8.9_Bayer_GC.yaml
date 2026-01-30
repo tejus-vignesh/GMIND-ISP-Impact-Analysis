@@ -1,24 +1,25 @@
 module_enable_status:                 # do NOT modify modules order
   dpc: False
-  blc: True
-  aaf: True
+  blc: False
+  aaf: False
   awb: False
-  cnf: True
-  cfa: True
+  cnf: False
+  cfa: False
   scl: False
-  ccm: True
-  gac: True
+  ccm: False
+  gac: False
+  gac_bayer: True
   tvc: False
   wnf: False
-  csc: True
+  csc: False
   nlm: False
-  bnf: True # Tejus
-  ceh: True
+  bnf: False 
+  ceh: False
   he:  False
-  eeh: True
-  fcs: True
-  hsc: True
-  bcc: True
+  eeh: False
+  fcs: False
+  hsc: False
+  bcc: False
 
 #  dpc: False
 #  blc: True
@@ -97,6 +98,10 @@ gac:
   gain: 256                           # x256
   gamma: 0.45
 
+gac_bayer:
+  gain: 256                           # x256
+  gamma: 0.45
+
 tvc:
   weight: 0.1
   multichannel: True
@@ -131,8 +136,8 @@ he:
   
 eeh:
   edge_gain: 384                      # x256
-  flat_threshold: 4                   # delta <= flat_threshold: set delta to 0
-  edge_threshold: 8                   # delta > edge_threshold: increase delta by edge_gain
+  flat_threshold: 12                   # delta <= flat_threshold: set delta to 0
+  edge_threshold: 24                   # delta > edge_threshold: increase delta by edge_gain
   delta_threshold: 64
 
 fcs:

@@ -12,6 +12,7 @@ from .dpc import DPC
 from .eeh import EEH
 from .fcs import FCS
 from .gac import GAC
+from .gac_bayer import GAC_BAYER # Tejus
 from .hsc import HSC
 from .nlm import NLM
 from .scl import SCL
