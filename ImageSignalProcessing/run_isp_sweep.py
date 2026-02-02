@@ -1,12 +1,10 @@
-## 
-## run_isp_sweep.py - ISP Parameter Sweep Script
 #
 # This script performs parameter sweeps across ISP configurations.
 # It supports one-at-a-time sweeps where each parameter is changed independently
 # while all others remain at their YAML default values.
 #
 # Features:
-#   - Support for 1-3 source directories paired 1:1 with output directories
+#   - Support for multiple source directories paired 1:1 with output directories
 #   - One-at-a-time parameter sweeps (NOT combinations)
 #   - Generates both PNG images and MP4 videos for each run
 #   - Output directories named after configuration settings
@@ -19,10 +17,7 @@
 #     - BASE_CONFIG: base config file name from configs/ directory
 #     - SWEEP_PARAMS: dict of blocks and their parameter value ranges
 #   - Run: python run_isp_sweep.py
-#
-# Author: D. Molloy / T. Gudipati
-# Date: 2025-12-02
-#
+
 
 import glob
 import logging
