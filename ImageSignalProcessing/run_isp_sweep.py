@@ -21,6 +21,7 @@
 
 import glob
 import logging
+import multiprocessing
 import os
 import shutil
 import time
@@ -49,7 +50,8 @@ SAVE_VIDEO = True
 SAVE_PNG = True
 
 # Global setting for number of processes in batch pipeline
-NUM_PROCESSES = 12
+# Set to "Auto" to enable auto-tuning, or an integer for manual
+NUM_PROCESSES = "Auto"
 
 # Global setting for video framerate
 VIDEO_FRAMERATE = 30
@@ -157,7 +159,7 @@ def create_config_with_single_param(base_config_path, block_name, param_name, va
     return cfg
 
 
-def save_run_log(out_dir, dir_name, block_name, param_name, value, base_config, source_dir, image_count, elapsed_time):
+def save_run_log(out_dir, dir_name, block_name, param_name, value, base_config, source_dir, image_count, elapsed_time, num_processes):
     """
     Save a log file documenting the run parameters.
 
@@ -171,6 +173,7 @@ def save_run_log(out_dir, dir_name, block_name, param_name, value, base_config, 
         source_dir: source directory path
         image_count: number of images processed
         elapsed_time: processing time in seconds
+        num_processes: number of parallel processes used
     """
     log_path = os.path.join(out_dir, f"{dir_name}_run.log")
     with open(log_path, "w") as f:
@@ -180,6 +183,7 @@ def save_run_log(out_dir, dir_name, block_name, param_name, value, base_config, 
         f.write(f"Base Config: {base_config}\n")
         f.write(f"Source Directory: {source_dir}\n")
         f.write(f"Images Processed: {image_count}\n")
+        f.write(f"Num Processes: {num_processes}\n")
         f.write(f"\nParameter Override:\n")
         f.write(f"  Block: {block_name}\n")
         f.write(f"  Parameter: {param_name}\n")
@@ -242,6 +246,80 @@ def create_video_from_pngs(save_dir, out_parent, dir_name, video_framerate):
     process.stdin.close()
     process.wait()
     logger.info(f"Video saved: {out_video_path}")
+
+
+def find_optimal_num_processes(
+    raw_paths, save_dir, load_raw_fn, pipeline_class, config, max_procs=None, test_count=18
+):
+    """
+    Benchmark different process counts and return the optimal number for batch_run.
+    Args:
+        raw_paths: list of image paths (use a small subset for testing)
+        save_dir: directory to save outputs (can be a temp dir)
+        load_raw_fn: function to load bayer data
+        pipeline_class: the Pipeline class
+        config: config object or path
+        max_procs: max processes to try (default: cpu_count)
+        test_count: number of images to use for benchmarking
+    Returns:
+        int: optimal number of processes
+    """
+    if max_procs is None:
+        max_procs = multiprocessing.cpu_count()
+    test_paths = raw_paths[:test_count]
+    best_time = float("inf")
+    best_proc = 1
+    logger.info("Benchmarking process counts...")
+    for n_proc in [4, 6, 8, max_procs]:
+        n_proc = min(n_proc, max_procs)
+        if n_proc < 1:
+            continue
+        pipeline = pipeline_class(config)
+        start = time.time()
+        pipeline.batch_run(
+            test_paths, save_dir, load_raw_fn, num_processes=n_proc, show_progress=True
+        )
+        elapsed = time.time() - start
+        logger.info(f"{n_proc} processes: {elapsed:.2f}s")
+        if elapsed < best_time:
+            best_time = elapsed
+            best_proc = n_proc
+    logger.info(f"Optimal number of processes: {best_proc}")
+    return best_proc
+
+
+def auto_set_num_processes(source_dirs, base_config_path, load_raw_fn, pipeline_class):
+    """
+    If NUM_PROCESSES is set to 'Auto', benchmark and set the optimal number of processes.
+    Modifies the global NUM_PROCESSES.
+
+    Args:
+        source_dirs: list of source directories
+        base_config_path: path to base config file
+        load_raw_fn: function to load bayer data
+        pipeline_class: the Pipeline class
+    """
+    global NUM_PROCESSES
+    # Get sample images from first source directory
+    first_src = source_dirs[0]
+    sample_images = sorted(glob.glob(os.path.join(first_src, "*.png")))[:18]
+    if not sample_images:
+        logger.warning(f"No images found in {first_src} for benchmarking. Using default 8 processes.")
+        NUM_PROCESSES = 8
+        return
+
+    temp_bench_dir = "./_bench_temp/"
+    os.makedirs(temp_bench_dir, exist_ok=True)
+    NUM_PROCESSES = find_optimal_num_processes(
+        sample_images,
+        temp_bench_dir,
+        load_raw_fn,
+        pipeline_class,
+        Config(base_config_path),
+        test_count=18,
+    )
+    shutil.rmtree(temp_bench_dir)
+    logger.info(f"Using NUM_PROCESSES = {NUM_PROCESSES} for batch processing.")
 
 
 def process_sweep(source_dirs, output_dirs, base_config, sweep_params):
@@ -321,7 +399,7 @@ def process_sweep(source_dirs, output_dirs, base_config, sweep_params):
             # Save run log
             save_run_log(
                 config_dir, dir_name, block_name, param_name, value,
-                base_config, src_dir, len(processed_images), elapsed_time
+                base_config, src_dir, len(processed_images), elapsed_time, NUM_PROCESSES
             )
 
             # Generate video
@@ -341,13 +419,13 @@ if __name__ == "__main__":
     # Source directories - must match count of OUTPUT_DIRS
     SOURCE_DIRS = [
         "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/1/RAW_Images/FLIR8.9/",
-        "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/2/RAW_Images/FLIR8.9/",  
+        # "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/2/RAW_Images/FLIR8.9/",  
     ]
 
     # Output parent directories 
     OUTPUT_DIRS = [
         "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/1/Processed_Images/FLIR8.9/",
-        "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/2/Processed_Images/FLIR8.9/",
+        # "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/2/Processed_Images/FLIR8.9/",
     ]
 
     # Base config file to modify (from configs/ directory)
@@ -357,12 +435,17 @@ if __name__ == "__main__":
     # Each parameter is swept INDEPENDENTLY while others stay at default
     SWEEP_PARAMS = {
         "gac": {
-            "gamma": [0.3, 0.4, 0.45, 0.5],  # 4 runs with only gamma changed
-            "gain": [8, 32, 512, 1024]
+            "gamma": [0.3, 0.4],  # 4 runs with only gamma changed
+            "gain": [8, 32]
         },
         # "bnf": {
         #     "intensity_sigma": [8, 32, 512, 1024],
         # }
     }
+
+    # Auto-tune number of processes if set to "Auto"
+    if NUM_PROCESSES == "Auto":
+        base_config_path = os.path.join(CONFIG_DIR, BASE_CONFIG)
+        auto_set_num_processes(SOURCE_DIRS, base_config_path, load_bayer, Pipeline)
 
     process_sweep(SOURCE_DIRS, OUTPUT_DIRS, BASE_CONFIG, SWEEP_PARAMS)
