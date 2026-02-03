@@ -18,10 +18,20 @@
 #     - SWEEP_PARAMS: dict of blocks and their parameter value ranges
 #   - Run: python run_isp_sweep.py
 
+# Examples:
+#   # Single parameter sweep
+#   python run_isp_sweep.py --sweep "gac.gamma:0.3,0.4,0.45,0.5"
 
+#   # Multiple parameter sweeps
+#   python run_isp_sweep.py --sweep "gac.gamma:0.3,0.4,0.5" --sweep "gac.gain:8,32,512"
+
+#   # With custom base config
+#   python run_isp_sweep.py --config FLIR8.9.yaml --sweep "gac.gamma:0.3,0.4,0.5"
+
+
+import argparse
 import glob
 import logging
-import multiprocessing
 import os
 import shutil
 import time
@@ -43,15 +53,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Set the default config directory globally
-CONFIG_DIR = os.path.join(os.path.dirname(__file__), "configs")
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "configs")
 
 # Global toggles for output
 SAVE_VIDEO = True
 SAVE_PNG = True
 
 # Global setting for number of processes in batch pipeline
-# Set to "Auto" to enable auto-tuning, or an integer for manual
-NUM_PROCESSES = "Auto"
+NUM_PROCESSES = 12
 
 # Global setting for video framerate
 VIDEO_FRAMERATE = 30
@@ -159,7 +168,7 @@ def create_config_with_single_param(base_config_path, block_name, param_name, va
     return cfg
 
 
-def save_run_log(out_dir, dir_name, block_name, param_name, value, base_config, source_dir, image_count, elapsed_time, num_processes):
+def save_run_log(out_dir, dir_name, block_name, param_name, value, base_config, source_dir, image_count, elapsed_time):
     """
     Save a log file documenting the run parameters.
 
@@ -173,7 +182,6 @@ def save_run_log(out_dir, dir_name, block_name, param_name, value, base_config, 
         source_dir: source directory path
         image_count: number of images processed
         elapsed_time: processing time in seconds
-        num_processes: number of parallel processes used
     """
     log_path = os.path.join(out_dir, f"{dir_name}_run.log")
     with open(log_path, "w") as f:
@@ -183,13 +191,107 @@ def save_run_log(out_dir, dir_name, block_name, param_name, value, base_config, 
         f.write(f"Base Config: {base_config}\n")
         f.write(f"Source Directory: {source_dir}\n")
         f.write(f"Images Processed: {image_count}\n")
-        f.write(f"Num Processes: {num_processes}\n")
         f.write(f"\nParameter Override:\n")
         f.write(f"  Block: {block_name}\n")
         f.write(f"  Parameter: {param_name}\n")
         f.write(f"  Value: {value}\n")
         f.write(f"\nProcessing Time: {elapsed_time:.2f}s\n")
     logger.debug(f"Run log saved: {log_path}")
+
+
+def parse_sweep_arg(sweep_str):
+    """
+    Parse a single sweep string into (block, param, values).
+
+    Args:
+        sweep_str: string like "gac.gamma:0.3,0.4,0.5"
+
+    Returns:
+        tuple: (block_name, param_name, [values])
+
+    Raises:
+        ValueError: if format is invalid
+    """
+    if ":" not in sweep_str or "." not in sweep_str.split(":")[0]:
+        raise ValueError(
+            f"Invalid sweep format: '{sweep_str}'. "
+            f"Expected format: 'block.param:val1,val2,...' (e.g., 'gac.gamma:0.3,0.4,0.5')"
+        )
+
+    param_part, values_part = sweep_str.split(":", 1)
+    block_name, param_name = param_part.split(".", 1)
+
+    # Parse values with auto type detection
+    values = []
+    for val_str in values_part.split(","):
+        val_str = val_str.strip()
+        # Try int first, then float, then string
+        try:
+            values.append(int(val_str))
+        except ValueError:
+            try:
+                values.append(float(val_str))
+            except ValueError:
+                values.append(val_str)
+
+    return block_name, param_name, values
+
+
+def build_sweep_params(sweep_args):
+    """
+    Build SWEEP_PARAMS dict from list of sweep argument strings.
+
+    Args:
+        sweep_args: list of strings like ["gac.gamma:0.3,0.4", "gac.gain:8,32"]
+
+    Returns:
+        dict: {block_name: {param_name: [values]}}
+    """
+    sweep_params = {}
+    for sweep_str in sweep_args:
+        block_name, param_name, values = parse_sweep_arg(sweep_str)
+        if block_name not in sweep_params:
+            sweep_params[block_name] = {}
+        sweep_params[block_name][param_name] = values
+    return sweep_params
+
+
+def parse_args():
+    """
+    Parse command-line arguments.
+
+    Returns:
+        argparse.Namespace with 'sweep' (list) and 'config' (str)
+    """
+    parser = argparse.ArgumentParser(
+        description="ISP Parameter Sweep Tool - Run one-at-a-time parameter sweeps",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Single parameter sweep
+  python run_isp_sweep.py --sweep "gac.gamma:0.3,0.4,0.45,0.5"
+
+  # Multiple parameter sweeps
+  python run_isp_sweep.py --sweep "gac.gamma:0.3,0.4,0.5" --sweep "gac.gain:8,32,512"
+
+  # With custom base config
+  python run_isp_sweep.py --config FLIR8.9.yaml --sweep "gac.gamma:0.3,0.4,0.5"
+        """
+    )
+    parser.add_argument(
+        "-s", "--sweep",
+        action="append",
+        required=True,
+        metavar="BLOCK.PARAM:VAL1,VAL2,...",
+        help="Sweep specification. Format: block.param:val1,val2,... (can be repeated)"
+    )
+    parser.add_argument(
+        "-c", "--config",
+        default="FLIR8.9.yaml",
+        metavar="FILE",
+        help="Base config file from configs/ directory (default: FLIR8.9.yaml)"
+    )
+    return parser.parse_args()
 
 
 def create_video_from_pngs(save_dir, out_parent, dir_name, video_framerate):
@@ -246,80 +348,6 @@ def create_video_from_pngs(save_dir, out_parent, dir_name, video_framerate):
     process.stdin.close()
     process.wait()
     logger.info(f"Video saved: {out_video_path}")
-
-
-def find_optimal_num_processes(
-    raw_paths, save_dir, load_raw_fn, pipeline_class, config, max_procs=None, test_count=18
-):
-    """
-    Benchmark different process counts and return the optimal number for batch_run.
-    Args:
-        raw_paths: list of image paths (use a small subset for testing)
-        save_dir: directory to save outputs (can be a temp dir)
-        load_raw_fn: function to load bayer data
-        pipeline_class: the Pipeline class
-        config: config object or path
-        max_procs: max processes to try (default: cpu_count)
-        test_count: number of images to use for benchmarking
-    Returns:
-        int: optimal number of processes
-    """
-    if max_procs is None:
-        max_procs = multiprocessing.cpu_count()
-    test_paths = raw_paths[:test_count]
-    best_time = float("inf")
-    best_proc = 1
-    logger.info("Benchmarking process counts...")
-    for n_proc in [4, 6, 8, max_procs]:
-        n_proc = min(n_proc, max_procs)
-        if n_proc < 1:
-            continue
-        pipeline = pipeline_class(config)
-        start = time.time()
-        pipeline.batch_run(
-            test_paths, save_dir, load_raw_fn, num_processes=n_proc, show_progress=True
-        )
-        elapsed = time.time() - start
-        logger.info(f"{n_proc} processes: {elapsed:.2f}s")
-        if elapsed < best_time:
-            best_time = elapsed
-            best_proc = n_proc
-    logger.info(f"Optimal number of processes: {best_proc}")
-    return best_proc
-
-
-def auto_set_num_processes(source_dirs, base_config_path, load_raw_fn, pipeline_class):
-    """
-    If NUM_PROCESSES is set to 'Auto', benchmark and set the optimal number of processes.
-    Modifies the global NUM_PROCESSES.
-
-    Args:
-        source_dirs: list of source directories
-        base_config_path: path to base config file
-        load_raw_fn: function to load bayer data
-        pipeline_class: the Pipeline class
-    """
-    global NUM_PROCESSES
-    # Get sample images from first source directory
-    first_src = source_dirs[0]
-    sample_images = sorted(glob.glob(os.path.join(first_src, "*.png")))[:18]
-    if not sample_images:
-        logger.warning(f"No images found in {first_src} for benchmarking. Using default 8 processes.")
-        NUM_PROCESSES = 8
-        return
-
-    temp_bench_dir = "./_bench_temp/"
-    os.makedirs(temp_bench_dir, exist_ok=True)
-    NUM_PROCESSES = find_optimal_num_processes(
-        sample_images,
-        temp_bench_dir,
-        load_raw_fn,
-        pipeline_class,
-        Config(base_config_path),
-        test_count=18,
-    )
-    shutil.rmtree(temp_bench_dir)
-    logger.info(f"Using NUM_PROCESSES = {NUM_PROCESSES} for batch processing.")
 
 
 def process_sweep(source_dirs, output_dirs, base_config, sweep_params):
@@ -399,7 +427,7 @@ def process_sweep(source_dirs, output_dirs, base_config, sweep_params):
             # Save run log
             save_run_log(
                 config_dir, dir_name, block_name, param_name, value,
-                base_config, src_dir, len(processed_images), elapsed_time, NUM_PROCESSES
+                base_config, src_dir, len(processed_images), elapsed_time
             )
 
             # Generate video
@@ -415,37 +443,28 @@ def process_sweep(source_dirs, output_dirs, base_config, sweep_params):
 
 
 if __name__ == "__main__":
+    # Parse command-line arguments
+    args = parse_args()
+
+    # Build sweep parameters from CLI arguments
+    SWEEP_PARAMS = build_sweep_params(args.sweep)
+
+    # Log parsed sweep parameters
+    logger.info("Parsed sweep parameters:")
+    for block, params in SWEEP_PARAMS.items():
+        for param, values in params.items():
+            logger.info(f"  {block}.{param}: {values}")
 
     # Source directories - must match count of OUTPUT_DIRS
     SOURCE_DIRS = [
         "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/1/RAW_Images/FLIR8.9/",
-        # "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/2/RAW_Images/FLIR8.9/",  
+        # "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/2/RAW_Images/FLIR8.9/",
     ]
 
-    # Output parent directories 
+    # Output parent directories
     OUTPUT_DIRS = [
         "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/1/Processed_Images/FLIR8.9/",
         # "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/2/Processed_Images/FLIR8.9/",
     ]
 
-    # Base config file to modify (from configs/ directory)
-    BASE_CONFIG = "FLIR8.9.yaml"
-
-    # Parameter sweep configuration
-    # Each parameter is swept INDEPENDENTLY while others stay at default
-    SWEEP_PARAMS = {
-        "gac": {
-            "gamma": [0.3, 0.4],  # 4 runs with only gamma changed
-            "gain": [8, 32]
-        },
-        # "bnf": {
-        #     "intensity_sigma": [8, 32, 512, 1024],
-        # }
-    }
-
-    # Auto-tune number of processes if set to "Auto"
-    if NUM_PROCESSES == "Auto":
-        base_config_path = os.path.join(CONFIG_DIR, BASE_CONFIG)
-        auto_set_num_processes(SOURCE_DIRS, base_config_path, load_bayer, Pipeline)
-
-    process_sweep(SOURCE_DIRS, OUTPUT_DIRS, BASE_CONFIG, SWEEP_PARAMS)
+    process_sweep(SOURCE_DIRS, OUTPUT_DIRS, args.config, SWEEP_PARAMS)

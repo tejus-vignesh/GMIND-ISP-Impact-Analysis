@@ -329,6 +329,7 @@ RandomScripts/*_output/
 
 # Sample datasets (large, can be downloaded separately)
 coco_sample/
+SampleData/
 
 # =============================================================================
 # Build and Dependency Management
