@@ -8,7 +8,7 @@
 data:
   # Root directory of GMIND dataset
   # Examples: Windows: "H:/GMIND", WSL: "/mnt/h/GMIND", Linux: "/path/to/GMIND"
-  root: "/path/to/GMIND"  # UPDATE THIS PATH to your GMIND dataset location
+  root: "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/GMIND"  # UPDATE THIS PATH to your GMIND dataset location
   
   # Sensor to use
   # Options: "FLIR3.2", "FLIR8.9", "CCTV", "Thermal", "EB", "Drone"
@@ -26,42 +26,77 @@ data:
 # - Validation: 20% of OutlierSet/1 and 20% of UrbanJunctionSet/1 (remaining portions)
 # - Test: All of OutlierSet/2 and UrbanJunctionSet/2 (for final metrics evaluation)
 
+
 train:
   sets:
-    - "OutlierSet"
-    - "PedestrianInteractionSet"
-    - "UrbanJunctionSet"
+    - "NightUrbanJunction"
   # Specify subdirectories for each set
   set_subdirs:
-    "OutlierSet": [1]
-    "PedestrianInteractionSet": [1, 2]  # All of PedestrianInteractionSet
-    "UrbanJunctionSet": [1]
-  # Use 80% of OutlierSet/1 and UrbanJunctionSet/1 for training
+    "NightUrbanJunction": [2]
+  # Use 80% of data for training
   percentage_split:
-    "OutlierSet/1": 0.8
-    "UrbanJunctionSet/1": 0.8
+    "NightUrbanJunction/2": 0.7
 
 validation:
-  # Validation: 20% of OutlierSet/1 and UrbanJunctionSet/1 (remaining portions after 80% used for training)
+  # Validation: Use remaining 20% of data
   sets:
-    - "OutlierSet"
-    - "UrbanJunctionSet"
+    - "NightUrbanJunction"
   set_subdirs:
-    "OutlierSet": [1]
-    "UrbanJunctionSet": [1]
-  # Use last 20% of OutlierSet/1 and UrbanJunctionSet/1 (from 80% to 100%)
+    "NightUrbanJunction": [2]
+  # Start from 80% and use remaining 20%
   percentage_split_start:
-    "OutlierSet/1": 0.8
-    "UrbanJunctionSet/1": 0.8
+    "NightUrbanJunction/2": 0.7
   percentage_split:
-    "OutlierSet/1": 0.2
-    "UrbanJunctionSet/1": 0.2
+    "NightUrbanJunction/2": 0.2
 
 test:
-  # Test: All of OutlierSet/2 and UrbanJunctionSet/2 (for final metrics evaluation)
+  # Use validation set as test for now (same 20% of data)
   sets:
-    - "OutlierSet"
-    - "UrbanJunctionSet"
+    - "NightUrbanJunction"
   set_subdirs:
-    "OutlierSet": [2]
-    "UrbanJunctionSet": [2]
+    "NightUrbanJunction": [2]
+  percentage_split_start:
+    "NightUrbanJunction/2": 0.9
+  percentage_split:
+    "NightUrbanJunction/2": 0.1
+
+# train:
+#   sets:
+#     - "OutlierSet"
+#     - "PedestrianInteractionSet"
+#     - "UrbanJunctionSet"
+#   # Specify subdirectories for each set
+#   set_subdirs:
+#     "OutlierSet": [1]
+#     "PedestrianInteractionSet": [1, 2]  # All of PedestrianInteractionSet
+#     "UrbanJunctionSet": [1]
+#   # Use 80% of OutlierSet/1 and UrbanJunctionSet/1 for training
+#   percentage_split:
+#     "OutlierSet/1": 0.8
+#     "UrbanJunctionSet/1": 0.8
+
+# validation:
+#   # Validation: 20% of OutlierSet/1 and UrbanJunctionSet/1 (remaining portions after 80% used for training)
+#   sets:
+#     - "OutlierSet"
+#     - "UrbanJunctionSet"
+#   set_subdirs:
+#     "OutlierSet": [1]
+#     "UrbanJunctionSet": [1]
+#   # Use last 20% of OutlierSet/1 and UrbanJunctionSet/1 (from 80% to 100%)
+#   percentage_split_start:
+#     "OutlierSet/1": 0.8
+#     "UrbanJunctionSet/1": 0.8
+#   percentage_split:
+#     "OutlierSet/1": 0.2
+#     "UrbanJunctionSet/1": 0.2
+
+# test:
+#   # Test: All of OutlierSet/2 and UrbanJunctionSet/2 (for final metrics evaluation)
+#   sets:
+#     - "OutlierSet"
+#     - "UrbanJunctionSet"
+#   set_subdirs:
+#     "OutlierSet": [2]
+#     "UrbanJunctionSet": [2]
+# ###
