@@ -432,7 +432,7 @@ def main():
     parser.add_argument(
         "--backend",
         default="torchvision",
-        choices=["torchvision", "ultralytics", "mmdet"],
+        choices=["torchvision", "ultralytics", "mmdet", "auto"],
         help="Backend for model construction",
     )
     parser.add_argument("--backend-config", default=None, help="Optional backend config file")
@@ -472,6 +472,10 @@ def main():
     parser.add_argument(
         "--gmind-config", default=None, help="Path to GMIND dataset config YAML file"
     )
+    parser.add_argument(
+        "--isp-variant", default=None,
+        help="ISP variant name for sensitivity analysis (e.g., gac_gain-8, Default_ISP, Bayer_GC)",
+    )
     parser.add_argument("--use-amp", action="store_true", help="Use mixed precision training")
     parser.add_argument(
         "--do-eval",
@@ -498,6 +502,12 @@ def main():
 
     device = torch.device(args.device)
     logger.info(f"Using device: {device}")
+
+    # Auto-structure checkpoint directory: {base}/{model}/{variant}/
+    if args.isp_variant:
+        checkpoint_dir = Path(args.checkpoint_dir) / args.model / args.isp_variant
+    else:
+        checkpoint_dir = Path(args.checkpoint_dir)
 
     # Load datasets - either GMIND or COCO
     if args.use_gmind:
@@ -529,7 +539,13 @@ def main():
         max_frames_per_video = config["data"].get("max_frames_per_video")
 
         # Import GMIND DataLoader
-        from DataLoader import get_gmind_dataloader
+        if args.isp_variant:
+            from SensitivityAnalysis.isp_dataset import get_isp_dataloader as get_gmind_dataloader
+            logger.info(f"ISP variant mode: '{args.isp_variant}'")
+        else:
+            from DataLoader import get_gmind_dataloader
+
+        isp_kwargs = {"isp_variant": args.isp_variant} if args.isp_variant else {}
 
         # Create train dataset
         train_config = config.get("train", {})
@@ -553,6 +569,7 @@ def main():
             set_subdirs=train_set_subdirs,
             percentage_split=train_percentage_split,
             percentage_split_start=train_percentage_split_start,
+            **isp_kwargs,
         )
         train_dataset = train_loader.dataset
 
@@ -580,6 +597,7 @@ def main():
             set_subdirs=val_set_subdirs,
             percentage_split=val_percentage_split,
             percentage_split_start=val_percentage_split_start,
+            **isp_kwargs,
         )
         val_dataset = val_loader.dataset
 
@@ -745,8 +763,11 @@ def main():
         logger.info("Ultralytics YOLO Training Path")
         logger.info("=" * 60)
 
-        # Export GMIND dataset to YOLO format
-        yolo_export_dir = Path(args.checkpoint_dir) / "yolo_dataset"
+        # Export GMIND dataset to YOLO format (shared across models for same variant)
+        if args.isp_variant:
+            yolo_export_dir = Path(args.checkpoint_dir) / "yolo_datasets" / args.isp_variant
+        else:
+            yolo_export_dir = checkpoint_dir / "yolo_dataset"
         data_yaml = yolo_export_dir / "data.yaml"
 
         # Get expected dataset sizes
@@ -772,6 +793,7 @@ def main():
             set_subdirs=test_set_subdirs,
             percentage_split=test_percentage_split,
             percentage_split_start=test_percentage_split_start,
+            **isp_kwargs,
         )
         expected_test_size = len(test_loader.dataset)
         total_for_split = expected_train_size + expected_test_size
@@ -855,7 +877,7 @@ def main():
 
         # Setup TensorBoard
         tb_writer = None
-        tb_log_dir = Path(args.checkpoint_dir) / "tensorboard_logs"
+        tb_log_dir = checkpoint_dir / "tensorboard_logs"
         if TENSORBOARD_AVAILABLE:
             tb_writer = SummaryWriter(log_dir=str(tb_log_dir))
             logger.info(f"TensorBoard logging enabled: {tb_log_dir}")
@@ -873,8 +895,8 @@ def main():
             "imgsz": 640,  # Standard YOLO input size
             "batch": args.batch_size,
             "device": str(device) if device.type == "cuda" else "cpu",
-            "project": str(args.checkpoint_dir),
-            "name": f"{args.model}_training",
+            "project": str(checkpoint_dir.resolve()),
+            "name": "training",
             "exist_ok": True,
             "save": True,
             "save_period": 10,  # Save checkpoint every 10 epochs
@@ -955,7 +977,7 @@ def main():
         logger.info(f"Augmentation level: {args.augment_level}")
         if args.lr:
             logger.info(f"Learning rate: {args.lr}")
-        logger.info(f"Checkpoint directory: {args.checkpoint_dir}")
+        logger.info(f"Checkpoint directory: {checkpoint_dir}")
         logger.info(f"TensorBoard logs: {tb_log_dir}")
         logger.info("=" * 70)
         logger.info("Starting Ultralytics training...")
@@ -984,12 +1006,8 @@ def main():
                 # Alternative results format
                 logger.info(f"Training results available in: {results}")
 
-            best_model_path = (
-                Path(args.checkpoint_dir) / f"{args.model}_training" / "weights" / "best.pt"
-            )
-            last_model_path = (
-                Path(args.checkpoint_dir) / f"{args.model}_training" / "weights" / "last.pt"
-            )
+            best_model_path = checkpoint_dir / "training" / "weights" / "best.pt"
+            last_model_path = checkpoint_dir / "training" / "weights" / "last.pt"
 
             logger.info(f"Best model: {best_model_path}")
             logger.info(f"Last checkpoint: {last_model_path}")
@@ -1041,7 +1059,7 @@ def main():
         # Setup TensorBoard
         tb_writer = None
         if TENSORBOARD_AVAILABLE:
-            tb_log_dir = Path(args.checkpoint_dir) / "tensorboard_logs"
+            tb_log_dir = checkpoint_dir / "tensorboard_logs"
             tb_writer = SummaryWriter(log_dir=str(tb_log_dir))
             logger.info(f"TensorBoard logging enabled: {tb_log_dir}")
 
@@ -1072,7 +1090,7 @@ def main():
                 "scaler_state": scaler.state_dict() if scaler is not None else None,
                 "args": vars(args),
             }
-            save_checkpoint(checkpoint, args.checkpoint_dir, epoch)
+            save_checkpoint(checkpoint, str(checkpoint_dir), epoch)
 
             if args.do_eval:
                 stats = evaluate_coco(model, val_loader, device, val_dataset=val_dataset)
