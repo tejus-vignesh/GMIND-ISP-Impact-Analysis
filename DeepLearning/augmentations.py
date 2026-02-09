@@ -120,20 +120,17 @@ def get_detection_transforms(train: bool = True, augment_level: str = "medium") 
     if augment_level == "light":
         # Minimal augmentations
         transforms_list = [
-            transforms.ToTensor(),
             RandomHorizontalFlip(p=0.5),
         ]
     elif augment_level == "medium":
         # Moderate augmentations (recommended)
         transforms_list = [
-            transforms.ToTensor(),
             RandomHorizontalFlip(p=0.5),
             ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
         ]
     else:  # heavy
         # Heavy augmentations
         transforms_list = [
-            transforms.ToTensor(),
             RandomHorizontalFlip(p=0.5),
             RandomVerticalFlip(p=0.3),
             ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.15),

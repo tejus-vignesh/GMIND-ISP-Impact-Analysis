@@ -77,19 +77,16 @@ def collate_fn(batch):
 
 
 def get_transform(train: bool):
-    """Get data transforms for training or validation.
+    """Get detection-aware transforms for training or validation.
 
-    Args:
-        train: If True, apply training augmentations (random horizontal flip)
-               If False, only convert to tensor
+    Returns transforms that operate on (image, target) pairs, ensuring
+    augmentations like horizontal flip are applied to both image and
+    bounding box coordinates.
 
-    Returns:
-        Compose transform object
+    Uses detection transforms from DeepLearning.augmentations module.
     """
-    transforms_list = [transforms.ToTensor()]
-    if train:
-        transforms_list.append(transforms.RandomHorizontalFlip(0.5))
-    return transforms.Compose(transforms_list)
+    from DeepLearning.augmentations import get_detection_transforms
+    return get_detection_transforms(train=train, augment_level="light")
 
 
 DEFAULT_COCO_KEYPOINTS = 17
@@ -186,7 +183,7 @@ class CocoDetectionWrapper(CocoDetection):
         w, h = img.size
         target = coco_to_target(target, image_id, (w, h))
         if self._transforms is not None:
-            img = self._transforms(img)
+            img, target = self._transforms(img, target)
         return img, target
 
 
@@ -396,7 +393,7 @@ def train_one_epoch(
         images = [img.to(device) for img in images]
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
         optimizer.zero_grad()
-        with torch.cuda.amp.autocast(enabled=(scaler is not None)):
+        with torch.amp.autocast('cuda', enabled=(scaler is not None)):
             loss_dict = model(images, targets)
             losses = sum(loss for loss in loss_dict.values())
         loss_value = losses.item()
@@ -1063,54 +1060,65 @@ def main():
             tb_writer = SummaryWriter(log_dir=str(tb_log_dir))
             logger.info(f"TensorBoard logging enabled: {tb_log_dir}")
 
-        logger.info(f"Starting training for {args.epochs} epochs")
-        for epoch in range(start_epoch, args.epochs):
-            start_time = time.time()
-            train_loss = train_one_epoch(
-                model, optimizer, train_loader, device, epoch, scaler=scaler
-            )
-            lr_scheduler.step()
-            epoch_time = time.time() - start_time
-            current_lr = optimizer.param_groups[0]["lr"]
+        try:
+            logger.info(f"Starting training for {args.epochs} epochs")
+            for epoch in range(start_epoch, args.epochs):
+                start_time = time.time()
+                train_loss = train_one_epoch(
+                    model, optimizer, train_loader, device, epoch, scaler=scaler
+                )
+                lr_scheduler.step()
+                epoch_time = time.time() - start_time
+                current_lr = optimizer.param_groups[0]["lr"]
 
-            # Log to TensorBoard
+                # Log to TensorBoard
+                if tb_writer:
+                    tb_writer.add_scalar("train/loss", train_loss, epoch)
+                    tb_writer.add_scalar("train/learning_rate", current_lr, epoch)
+                    tb_writer.add_scalar("train/epoch_time", epoch_time, epoch)
+
+                logger.info(
+                    f"Epoch {epoch}/{args.epochs-1} | Loss: {train_loss:.4f} | LR: {current_lr:.6f} | Time: {epoch_time:.1f}s"
+                )
+
+                checkpoint = {
+                    "epoch": epoch,
+                    "model_state": model.state_dict(),
+                    "optimizer_state": optimizer.state_dict(),
+                    "scaler_state": scaler.state_dict() if scaler is not None else None,
+                    "args": vars(args),
+                }
+                save_checkpoint(checkpoint, str(checkpoint_dir), epoch)
+
+                if args.do_eval:
+                    stats = evaluate_coco(model, val_loader, device, val_dataset=val_dataset)
+                    if stats is not None:
+                        logger.info(f"COCO AP (0.5:0.95): {stats[0]:.4f}")
+                        if tb_writer:
+                            tb_writer.add_scalar("val/mAP", stats[0], epoch)
+                else:
+                    model.eval()
+                    with torch.no_grad():
+                        val_images, val_targets = next(iter(val_loader))
+                        val_images = [img.to(device) for img in val_images]
+                        outputs = model(val_images)
+                        num_dets = len(outputs[0].get("boxes", []))
+                        logger.info(f"Sample validation: {num_dets} detections")
+        except KeyboardInterrupt:
+            logger.info("Training interrupted by user")
+        finally:
+            # Shutdown DataLoader workers
+            if hasattr(train_loader, '_workers'):
+                train_loader._shutdown_workers()
+            if hasattr(val_loader, '_workers'):
+                val_loader._shutdown_workers()
+            # Release GPU memory
+            del model
+            torch.cuda.empty_cache()
+            # Close TensorBoard writer
             if tb_writer:
-                tb_writer.add_scalar("train/loss", train_loss, epoch)
-                tb_writer.add_scalar("train/learning_rate", current_lr, epoch)
-                tb_writer.add_scalar("train/epoch_time", epoch_time, epoch)
-
-            logger.info(
-                f"Epoch {epoch}/{args.epochs-1} | Loss: {train_loss:.4f} | LR: {current_lr:.6f} | Time: {epoch_time:.1f}s"
-            )
-
-            checkpoint = {
-                "epoch": epoch,
-                "model_state": model.state_dict(),
-                "optimizer_state": optimizer.state_dict(),
-                "scaler_state": scaler.state_dict() if scaler is not None else None,
-                "args": vars(args),
-            }
-            save_checkpoint(checkpoint, str(checkpoint_dir), epoch)
-
-            if args.do_eval:
-                stats = evaluate_coco(model, val_loader, device, val_dataset=val_dataset)
-                if stats is not None:
-                    logger.info(f"COCO AP (0.5:0.95): {stats[0]:.4f}")
-                    if tb_writer:
-                        tb_writer.add_scalar("val/mAP", stats[0], epoch)
-            else:
-                model.eval()
-                with torch.no_grad():
-                    val_images, val_targets = next(iter(val_loader))
-                    val_images = [img.to(device) for img in val_images]
-                    outputs = model(val_images)
-                    num_dets = len(outputs[0].get("boxes", []))
-                    logger.info(f"Sample validation: {num_dets} detections")
-
-        if tb_writer:
-            tb_writer.close()
-
-        logger.info("Training complete")
+                tb_writer.close()
+            logger.info("Cleanup complete")
 
 
 if __name__ == "__main__":
