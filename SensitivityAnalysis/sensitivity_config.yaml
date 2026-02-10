@@ -1,7 +1,7 @@
 data:
   root: "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleTrainData/GMIND"  # Overridden by --data-root CLI arg
   sensor: "FLIR8.9"
-  frame_stride: 10
+  frame_stride: 5
   max_frames_per_video: null
 
 train:
@@ -10,22 +10,22 @@ train:
     "NightUrbanJunction": [1, 2]
   percentage_split:
     "NightUrbanJunction/1": 1.0
-    "NightUrbanJunction/2": 0.7
+    "NightUrbanJunction/2": 0.6
 
 validation:
   sets: ["NightUrbanJunction"]
   set_subdirs:
     "NightUrbanJunction": [2]
   percentage_split_start:
-    "NightUrbanJunction/2": 0.7
+    "NightUrbanJunction/2": 0.6
   percentage_split:
-    "NightUrbanJunction/2": 0.2
+    "NightUrbanJunction/2": 0.4
 
-test:
-  sets: ["NightUrbanJunction"]
-  set_subdirs:
-    "NightUrbanJunction": [2]
-  percentage_split_start:
-    "NightUrbanJunction/2": 0.9
-  percentage_split:
-    "NightUrbanJunction/2": 0.1
+# test:
+#   sets: ["NightUrbanJunction"]
+#   set_subdirs:
+#     "NightUrbanJunction": [2]
+#   percentage_split_start:
+#     "NightUrbanJunction/2": 0.9
+#   percentage_split:
+#     "NightUrbanJunction/2": 0.1

@@ -3,12 +3,12 @@
 Usage examples::
 
     # Basic export
-    python -m DataLoader.export_yolo_dataset \
+    python -m DataLoader.export_yolo_dataset_isp_variant \
         --gmind-config DeepLearning/gmind_config.yaml \
         --out-dir /path/to/yolo_dataset
 
     # With ISP variant — writes to /path/to/yolo_datasets/Default_ISP/
-    python -m DataLoader.export_yolo_dataset \
+    python -m DataLoader.export_yolo_dataset_isp_variant \
         --gmind-config SensitivityAnalysis/sensitivity_config.yaml \
         --isp-variant Default_ISP \
         --out-dir /path/to/yolo_datasets
