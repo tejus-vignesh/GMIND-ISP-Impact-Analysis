@@ -12,7 +12,6 @@ one SLURM job per (variant, model) combination::
 
 import argparse
 import logging
-import os
 import subprocess
 import textwrap
 from pathlib import Path
@@ -25,6 +24,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODELS = ["yolov8m", "yolo26m", "fasterrcnn_resnet50_fpn", "rtdetr-l"]
+
+MODEL_DEFAULTS = {
+    "yolov8m":                 {"batch_size": 32, "backend": "ultralytics", "epochs": 100},
+    "yolo26m":                 {"batch_size": 32, "backend": "ultralytics", "epochs": 100},
+    "fasterrcnn_resnet50_fpn": {"batch_size": 4,  "backend": "torchvision", "epochs": 30},
+    "rtdetr-l":                {"batch_size": 32, "backend": "ultralytics", "epochs": 20},
+}
 
 
 # ---------------------------------------------------------------------------
@@ -77,11 +83,10 @@ def generate_slurm_script(
     output_dir: str,
     epochs: int,
     batch_size: int,
+    backend: str,
     partition: str,
     gpus: int,
     cpus_per_task: int,
-    mem: str,
-    time_limit: str,
     mail_user: Optional[str],
     config_path: str,
 ) -> str:
@@ -102,8 +107,6 @@ def generate_slurm_script(
         #SBATCH --partition={partition}
         #SBATCH --gres=gpu:{gpus}
         #SBATCH --cpus-per-task={cpus_per_task}
-        #SBATCH --mem={mem}
-        #SBATCH --time={time_limit}
         #SBATCH --output={log_dir}/slurm_%j.out
         #SBATCH --error={log_dir}/slurm_%j.err
         {mail_lines}
@@ -114,7 +117,7 @@ def generate_slurm_script(
             --gmind-config {config_path} \\
             --isp-variant {variant} \\
             --model {model} \\
-            --backend auto \\
+            --backend {backend} \\
             --epochs {epochs} \\
             --batch-size {batch_size} \\
             --checkpoint-dir {output_dir} \\
@@ -138,14 +141,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sets", nargs="+", default=["NightUrbanJunction"])
     p.add_argument("--subdirs", nargs="+", type=int, default=[1, 2])
     p.add_argument("--models", nargs="+", default=DEFAULT_MODELS)
-    p.add_argument("--epochs", type=int, default=50)
-    p.add_argument("--batch-size", type=int, default=32)
 
     p.add_argument("--partition", default="gpu")
     p.add_argument("--gpus", type=int, default=1)
     p.add_argument("--cpus-per-task", type=int, default=8)
-    p.add_argument("--mem", default="32G")
-    p.add_argument("--time-limit", default="24:00:00")
     p.add_argument("--mail-user", default=None)
 
     p.add_argument(
@@ -176,7 +175,7 @@ def main():
             logger.error("No ISP variants discovered. Check --data-root and --sets.")
             return
 
-    scripts_dir = output_root / "slurm_scripts"
+    scripts_dir = Path(__file__).resolve().parent.parent / "slurm_scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
 
     total_jobs = len(variants) * len(args.models)
@@ -185,21 +184,22 @@ def main():
     submitted = 0
     for variant in variants:
         for model in args.models:
-            job_output_dir = output_root / model / variant
-            job_output_dir.mkdir(parents=True, exist_ok=True)
+            defaults = MODEL_DEFAULTS.get(model, {})
+            batch_size = defaults.get("batch_size", 32)
+            backend = defaults.get("backend", "auto")
+            epochs = defaults.get("epochs", 50)
 
             script_content = generate_slurm_script(
                 variant=variant,
                 model=model,
                 data_root=str(data_root),
                 output_dir=str(output_root),
-                epochs=args.epochs,
-                batch_size=args.batch_size,
+                epochs=epochs,
+                batch_size=batch_size,
+                backend=backend,
                 partition=args.partition,
                 gpus=args.gpus,
                 cpus_per_task=args.cpus_per_task,
-                mem=args.mem,
-                time_limit=args.time_limit,
                 mail_user=args.mail_user,
                 config_path=args.config,
             )
