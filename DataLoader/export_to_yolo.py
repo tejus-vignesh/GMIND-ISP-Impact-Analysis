@@ -1,7 +1,12 @@
-"""Export GMIND dataset to YOLO format for Ultralytics training."""
+"""Export GMIND dataset to YOLO format for Ultralytics training.
+
+Optimized version: keeps VideoCapture open per video and reads frames
+sequentially instead of reopening and seeking for every frame.
+"""
 
 import json
 import logging
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -113,11 +118,14 @@ def _infer_class_names(dataset) -> List[str]:
 
 
 def _export_dataset_split(dataset, images_dir: Path, labels_dir: Path, class_names: List[str]):
-    """Export a dataset split (train or val) to YOLO format."""
+    """Export a dataset split (train or val) to YOLO format.
+
+    Optimized: groups frames by video and reads sequentially to avoid
+    repeated open/seek/close overhead per frame.
+    """
     from . import GMINDDataset
 
     # Create mapping from COCO category IDs to YOLO class indices
-    # We'll need to get this from the dataset
     category_id_to_class_idx = {}
 
     # Try to get category mapping from first annotation file
@@ -137,83 +145,96 @@ def _export_dataset_split(dataset, images_dir: Path, labels_dir: Path, class_nam
         for i, name in enumerate(class_names):
             category_id_to_class_idx[i + 1] = i
 
+    # Group frame_index entries by video, preserving the global dataset idx
+    frames_by_video = defaultdict(list)
+    for dataset_idx, item in enumerate(dataset.frame_index):
+        frames_by_video[item["video_idx"]].append((dataset_idx, item))
+
     exported_count = 0
-    for idx in range(len(dataset)):
-        try:
-            # Get image and target from dataset
-            # Access the dataset's internal frame index
-            item = dataset.frame_index[idx]
-            video_idx = item["video_idx"]
-            frame_idx = item["frame_idx"]
-            video_item = dataset.video_items[video_idx]
-            video_path = video_item["video_path"]
+    for video_idx in sorted(frames_by_video.keys()):
+        video_item = dataset.video_items[video_idx]
+        video_path = video_item["video_path"]
 
-            # Load frame directly from video (without transforms)
-            # Use the dataset's _load_frame method
-            frame = dataset._load_frame(video_path, frame_idx)
+        # Build lookup: frame_number -> (dataset_idx, item)
+        entries = frames_by_video[video_idx]
+        needed = {item["frame_idx"]: (ds_idx, item) for ds_idx, item in entries}
+        max_frame = max(needed.keys())
 
-            # Convert numpy array (RGB) to PIL Image
-            if isinstance(frame, np.ndarray):
-                frame_pil = Image.fromarray(frame)
-            elif isinstance(frame, torch.Tensor):
-                # Convert tensor to PIL
-                frame_np = frame.permute(1, 2, 0).mul(255).byte().cpu().numpy()
-                frame_pil = Image.fromarray(frame_np)
-            else:
-                frame_pil = frame
-
-            # Get annotations
-            annotations = item.get("annotations", [])
-
-            # Save image
-            img_name = f"{idx:06d}.jpg"
-            img_path = images_dir / img_name
-            frame_pil.save(img_path, quality=95)
-
-            # Convert annotations to YOLO format
-            h, w = frame_pil.size[1], frame_pil.size[0]
-            label_lines = []
-
-            for ann in annotations:
-                # Get bounding box (COCO format: [x, y, width, height])
-                bbox = ann.get("bbox", [])
-                if len(bbox) != 4:
-                    continue
-
-                x, y, w_box, h_box = bbox
-
-                # Convert to YOLO format: normalized center_x, center_y, width, height
-                center_x = (x + w_box / 2.0) / w
-                center_y = (y + h_box / 2.0) / h
-                norm_w = w_box / w
-                norm_h = h_box / h
-
-                # Get class ID
-                category_id = ann.get("category_id", 0)
-                class_idx = category_id_to_class_idx.get(category_id, category_id - 1)
-
-                # Clamp values to [0, 1]
-                center_x = max(0, min(1, center_x))
-                center_y = max(0, min(1, center_y))
-                norm_w = max(0, min(1, norm_w))
-                norm_h = max(0, min(1, norm_h))
-
-                label_lines.append(
-                    f"{class_idx} {center_x:.6f} {center_y:.6f} {norm_w:.6f} {norm_h:.6f}"
-                )
-
-            # Save labels
-            label_path = labels_dir / (img_name.replace(".jpg", ".txt"))
-            with open(label_path, "w") as f:
-                f.write("\n".join(label_lines))
-
-            exported_count += 1
-
-            if (exported_count + 1) % 100 == 0:
-                logger.info(f"  Exported {exported_count + 1}/{len(dataset)} images...")
-
-        except Exception as e:
-            logger.warning(f"Failed to export image {idx}: {e}")
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            logger.warning(f"Could not open video {video_path}")
             continue
 
+        current_frame = 0
+        while current_frame <= max_frame:
+            ret, frame = cap.read()
+            if not ret:
+                logger.warning(
+                    f"Failed to read frame {current_frame} from {video_path}"
+                )
+                break
+
+            if current_frame in needed:
+                ds_idx, item = needed[current_frame]
+
+                # Convert BGR -> RGB -> PIL
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frame_pil = Image.fromarray(frame_rgb)
+
+                # Save image
+                img_name = f"{ds_idx:06d}.jpg"
+                frame_pil.save(images_dir / img_name, quality=95)
+
+                # Convert annotations to YOLO format
+                h, w = frame_pil.size[1], frame_pil.size[0]
+                label_lines = []
+                annotations = item.get("annotations", [])
+
+                for ann in annotations:
+                    # Get bounding box (COCO format: [x, y, width, height])
+                    bbox = ann.get("bbox", [])
+                    if len(bbox) != 4:
+                        continue
+
+                    x, y, w_box, h_box = bbox
+
+                    # Convert to YOLO format: normalized center_x, center_y, width, height
+                    center_x = (x + w_box / 2.0) / w
+                    center_y = (y + h_box / 2.0) / h
+                    norm_w = w_box / w
+                    norm_h = h_box / h
+
+                    # Get class ID
+                    category_id = ann.get("category_id", 0)
+                    class_idx = category_id_to_class_idx.get(
+                        category_id, category_id - 1
+                    )
+
+                    # Clamp values to [0, 1]
+                    center_x = max(0, min(1, center_x))
+                    center_y = max(0, min(1, center_y))
+                    norm_w = max(0, min(1, norm_w))
+                    norm_h = max(0, min(1, norm_h))
+
+                    label_lines.append(
+                        f"{class_idx} {center_x:.6f} {center_y:.6f} {norm_w:.6f} {norm_h:.6f}"
+                    )
+
+                # Save labels
+                label_path = labels_dir / (img_name.replace(".jpg", ".txt"))
+                with open(label_path, "w") as f:
+                    f.write("\n".join(label_lines))
+
+                exported_count += 1
+
+                if exported_count % 100 == 0:
+                    logger.info(
+                        f"  Exported {exported_count}/{len(dataset)} images..."
+                    )
+
+            current_frame += 1
+
+        cap.release()
+
     logger.info(f"Exported {exported_count}/{len(dataset)} images to {images_dir}")
+    
