@@ -717,6 +717,72 @@ def main():
         model.to(device)
     logger.info(f"Model loaded successfully (Ultralytics: {is_ultralytics})")
 
+    if args.eval_only and is_ultralytics:
+        logger.info("Running in YOLO evaluation-only mode")
+        from ultralytics import YOLO
+
+        # Load model from checkpoint
+        if args.eval_checkpoint:
+            model = YOLO(args.eval_checkpoint)
+            logger.info(f"Loaded YOLO model from: {args.eval_checkpoint}")
+        else:
+            logger.info(f"Using default model: {args.model}")
+
+        # Resolve data.yaml path
+        if args.isp_variant:
+            yolo_export_dir = Path(args.checkpoint_dir) / "yolo_datasets" / args.isp_variant
+        else:
+            yolo_export_dir = checkpoint_dir / "yolo_dataset"
+        data_yaml = yolo_export_dir / "data.yaml"
+
+        # Export dataset if not already done
+        if not data_yaml.exists():
+            yolo_export_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Exporting GMIND dataset to YOLO format: {yolo_export_dir}")
+            from DataLoader.export_to_yolo import export_gmind_to_yolo
+
+            data_yaml = export_gmind_to_yolo(
+                train_dataset=train_dataset,
+                val_dataset=val_dataset,
+                out_dir=str(yolo_export_dir),
+            )
+
+        # Run validation
+        device_str = str(device) if device.type == "cuda" else "cpu"
+        metrics = model.val(data=str(data_yaml), device=device_str, split="val")
+
+        # Log results
+        logger.info("=" * 70)
+        logger.info("YOLO Evaluation Results")
+        logger.info("=" * 70)
+        if hasattr(metrics, "box"):
+            logger.info(f"AP50-95: {metrics.box.map:.4f}")
+            logger.info(f"AP50:    {metrics.box.map50:.4f}")
+            logger.info(f"AP75:    {metrics.box.map75:.4f}")
+
+        # Save results if requested
+        if args.eval_output:
+            import json
+
+            results_dict = {
+                "model": args.model,
+                "checkpoint": args.eval_checkpoint,
+                "map50-95": metrics.box.map,
+                "map50": metrics.box.map50,
+                "map75": metrics.box.map75,
+                "per_class_map50": metrics.box.maps.tolist()
+                if hasattr(metrics.box.maps, "tolist")
+                else list(metrics.box.maps),
+            }
+            output_path = Path(args.eval_output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, "w") as f:
+                json.dump(results_dict, f, indent=2)
+            logger.info(f"Results saved to: {output_path}")
+
+        logger.info("Evaluation complete")
+        return
+
     if args.eval_only:
         logger.info("Running in evaluation-only mode")
         if args.eval_checkpoint:
