@@ -10,6 +10,9 @@ __pycache__/
 # C extensions
 *.so
 
+# Bash Scripts
+*.sh
+
 # Distribution / packaging
 .Python
 build/
@@ -334,6 +337,7 @@ GMIND/
 SampleTrainData/
 results/
 slurm_scripts/
+slurm_runlogs/
 
 # =============================================================================
 # Build and Dependency Management
