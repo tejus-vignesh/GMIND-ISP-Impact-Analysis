@@ -7,6 +7,7 @@ Designed for per-sensor loading (will be extended for synchronized multi-sensor 
 
 import json
 import logging
+from collections import defaultdict
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
@@ -103,6 +104,8 @@ class GMINDDataset(Dataset):
 
         # Build COCO ground truth object for pycocotools evaluation
         self.coco = self._build_coco_ground_truth()
+
+        self._frame_cache_dir = None  # Set by extract_frames()
 
         logger.info(f"GMINDDataset initialized:")
         logger.info(f"  - Videos found: {len(self.video_items)}")
@@ -372,6 +375,66 @@ class GMINDDataset(Dataset):
         coco.createIndex()
         return coco
 
+    def extract_frames(self, cache_dir):
+        """Pre-extract all dataset frames to disk using sequential video reads.
+
+        Frames are saved as JPEG files named by dataset index (e.g., 000000.jpg).
+        Skips extraction if cache is already complete.
+        """
+        cache_dir = Path(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        expected = len(self.frame_index)
+        existing = len(list(cache_dir.glob("*.jpg")))
+        if existing == expected:
+            logger.info(f"Frame cache complete: {existing} frames in {cache_dir}")
+            self._frame_cache_dir = cache_dir
+            return
+
+        # Incomplete cache — re-extract
+        if existing > 0:
+            logger.warning(f"Incomplete cache ({existing}/{expected}), re-extracting...")
+
+        logger.info(f"Extracting {expected} frames to {cache_dir}")
+
+        # Group frames by video for sequential reading
+        frames_by_video = defaultdict(list)
+        for dataset_idx, item in enumerate(self.frame_index):
+            frames_by_video[item["video_idx"]].append((dataset_idx, item["frame_idx"]))
+
+        extracted = 0
+        for video_idx in sorted(frames_by_video.keys()):
+            video_path = self.video_items[video_idx]["video_path"]
+            frame_list = frames_by_video[video_idx]
+            frame_list.sort(key=lambda x: x[1])  # Sort by frame_idx for sequential read
+
+            needed = {frame_idx: dataset_idx for dataset_idx, frame_idx in frame_list}
+            max_frame = max(needed.keys())
+
+            cap = cv2.VideoCapture(str(video_path))
+            if not cap.isOpened():
+                logger.warning(f"Could not open video {video_path}")
+                continue
+
+            current_frame = 0
+            while current_frame <= max_frame:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                if current_frame in needed:
+                    dataset_idx = needed[current_frame]
+                    out_path = cache_dir / f"{dataset_idx:06d}.jpg"
+                    cv2.imwrite(str(out_path), frame)  # Save BGR (same as video source)
+                    extracted += 1
+                    if extracted % 200 == 0:
+                        logger.info(f"  Extracted {extracted}/{expected} frames...")
+                current_frame += 1
+
+            cap.release()
+
+        logger.info(f"Extracted {extracted}/{expected} frames to {cache_dir}")
+        self._frame_cache_dir = cache_dir
+
     def _load_frame(self, video_path: Path, frame_idx: int) -> np.ndarray:
         """Load a specific frame from a video file.
 
@@ -473,10 +536,15 @@ class GMINDDataset(Dataset):
         frame_info = self.frame_index[idx]
         video_item = self.video_items[frame_info["video_idx"]]
 
-        # Load frame - reading sequentially: video frame_idx matches JSON frame number
-        # frame_info['frame_idx'] is the video frame index (0, 1, 2, ...)
-        # This matches the frame number extracted from JSON filename (e.g., "frame_000000" -> 0)
-        frame = self._load_frame(video_item["video_path"], frame_info["frame_idx"])
+        # Load frame: from cache if available, otherwise from video
+        if self._frame_cache_dir is not None:
+            frame_path = self._frame_cache_dir / f"{idx:06d}.jpg"
+            frame = cv2.imread(str(frame_path))
+            if frame is None:
+                raise IOError(f"Could not read cached frame: {frame_path}")
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        else:
+            frame = self._load_frame(video_item["video_path"], frame_info["frame_idx"])
 
         # Convert to PIL Image for transforms compatibility
         image = Image.fromarray(frame)

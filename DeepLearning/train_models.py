@@ -1022,6 +1022,18 @@ def main():
 
     else:
         # Standard PyTorch training path (for torchvision/MMDetection models)
+
+        # Pre-extract frames to disk for faster loading (avoids repeated video open/seek/close)
+        if args.use_gmind:
+            if args.isp_variant:
+                frame_cache_base = Path(args.checkpoint_dir) / "torchvision_datasets" / args.isp_variant
+            else:
+                frame_cache_base = checkpoint_dir / "torchvision_datasets"
+
+            logger.info("Pre-extracting frames to disk for faster training...")
+            train_dataset.extract_frames(frame_cache_base / "train")
+            val_dataset.extract_frames(frame_cache_base / "val")
+
         trainable_params = [p for p in model.parameters() if p.requires_grad]
         optimizer = torch.optim.SGD(trainable_params, lr=args.lr, momentum=0.9, weight_decay=0.0005)
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=8, gamma=0.1)
