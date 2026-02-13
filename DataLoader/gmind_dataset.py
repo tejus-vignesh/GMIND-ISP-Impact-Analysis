@@ -101,6 +101,9 @@ class GMINDDataset(Dataset):
         # Build frame index: (video_idx, frame_idx) -> annotation
         self.frame_index = self._build_frame_index()
 
+        # Build COCO ground truth object for pycocotools evaluation
+        self.coco = self._build_coco_ground_truth()
+
         logger.info(f"GMINDDataset initialized:")
         logger.info(f"  - Videos found: {len(self.video_items)}")
         logger.info(f"  - Total frames: {len(self.frame_index)}")
@@ -198,36 +201,79 @@ class GMINDDataset(Dataset):
         return video_items
 
     def _build_frame_index(self) -> List[Dict]:
-        """Build index mapping (video_idx, frame_idx) to annotations."""
+        """Build index mapping (video_idx, frame_idx) to annotations.
+
+        Also remaps image/annotation IDs to be globally unique across videos
+        and caches a merged COCO dict (``self._merged_coco_dict``) for later
+        use by ``_build_coco_ground_truth``.
+        """
         frame_index = []
+
+        # Accumulators for the merged COCO dict
+        merged_images = []
+        merged_annotations = []
+        merged_categories = None  # take from first video
+
+        # Cumulative offsets to make IDs globally unique
+        next_image_id_offset = 0
+        next_ann_id_offset = 0
 
         for video_idx, item in enumerate(self.video_items):
             # Load annotations
             with open(item["annotation_path"], "r") as f:
                 ann_data = json.load(f)
 
-            # Create mapping from image_id to annotations
-            image_id_to_anns = {}
-            for ann in ann_data.get("annotations", []):
-                image_id = ann["image_id"]
-                if image_id not in image_id_to_anns:
-                    image_id_to_anns[image_id] = []
-                image_id_to_anns[image_id].append(ann)
+            # Determine per-video max IDs for offset calculation
+            raw_images = ann_data.get("images", [])
+            raw_annotations = ann_data.get("annotations", [])
 
-            # Create mapping from frame number to image_id
+            img_offset = next_image_id_offset
+            ann_offset = next_ann_id_offset
+
+            # Build image_id lookup (original -> remapped image dict)
+            image_id_to_info = {}
             frame_to_image_id = {}
-            for img in ann_data.get("images", []):
-                # Extract frame number from filename (e.g., "FLIR3.2-Urban1_frame_000000.jpg" -> 0)
+            for img in raw_images:
+                remapped = dict(img)
+                remapped["id"] = img["id"] + img_offset
+                image_id_to_info[img["id"]] = remapped
+
+                # Extract frame number from filename
                 filename = img["file_name"]
                 try:
-                    # Extract frame number: "FLIR8.9-Urban1_frame_000000.jpg" -> "000000" -> 0
                     frame_num = int(filename.split("_frame_")[-1].split(".")[0])
                     frame_to_image_id[frame_num] = img["id"]
                 except Exception as e:
-                    # Log parsing errors at debug level
-                    if len(frame_to_image_id) < 5:  # Only log first few errors
+                    if len(frame_to_image_id) < 5:
                         logger.debug(f"Could not parse frame number from '{filename}': {e}")
                     continue
+
+            # Remap annotation IDs and image_id references
+            image_id_to_anns = {}
+            for ann in raw_annotations:
+                remapped_ann = dict(ann)
+                remapped_ann["id"] = ann["id"] + ann_offset
+                remapped_ann["image_id"] = ann["image_id"] + img_offset
+
+                orig_image_id = ann["image_id"]
+                if orig_image_id not in image_id_to_anns:
+                    image_id_to_anns[orig_image_id] = []
+                image_id_to_anns[orig_image_id].append(remapped_ann)
+
+                merged_annotations.append(remapped_ann)
+
+            # Accumulate remapped images into merged list
+            merged_images.extend(image_id_to_info.values())
+
+            # Take categories from the first video
+            if merged_categories is None:
+                merged_categories = ann_data.get("categories", [])
+
+            # Advance offsets past all IDs used by this video
+            if raw_images:
+                next_image_id_offset += max(img["id"] for img in raw_images)
+            if raw_annotations:
+                next_ann_id_offset += max(ann["id"] for ann in raw_annotations)
 
             # Get video info to determine frame count
             cap = cv2.VideoCapture(str(item["video_path"]))
@@ -272,11 +318,12 @@ class GMINDDataset(Dataset):
                 if self.max_frames and frames_added >= self.max_frames:
                     break
 
-                image_id = frame_to_image_id.get(frame_idx)
-                annotations = image_id_to_anns.get(image_id, [])
+                orig_image_id = frame_to_image_id.get(frame_idx)
+                annotations = image_id_to_anns.get(orig_image_id, [])
+                image_info = image_id_to_info.get(orig_image_id) if orig_image_id is not None else None
 
                 # Track missing annotations
-                if image_id is None:
+                if orig_image_id is None:
                     missing_annotations_count += 1
                     if missing_annotations_count <= 5:  # Only log first few
                         logger.debug(
@@ -291,18 +338,7 @@ class GMINDDataset(Dataset):
                         "video_idx": video_idx,
                         "frame_idx": frame_idx,
                         "annotations": annotations,
-                        "image_info": (
-                            next(
-                                (
-                                    img
-                                    for img in ann_data.get("images", [])
-                                    if img["id"] == image_id
-                                ),
-                                None,
-                            )
-                            if image_id
-                            else None
-                        ),
+                        "image_info": image_info,
                     }
                 )
                 frames_added += 1
@@ -310,7 +346,31 @@ class GMINDDataset(Dataset):
             if missing_annotations_count > 0:
                 logger.warning(f"{missing_annotations_count} frames had no matching JSON entry")
 
+        # Cache merged COCO dict for _build_coco_ground_truth
+        self._merged_coco_dict = {
+            "images": merged_images,
+            "annotations": merged_annotations,
+            "categories": merged_categories or [],
+        }
+
         return frame_index
+
+    def _build_coco_ground_truth(self):
+        """Create a pycocotools COCO object from the merged annotation dict.
+
+        Returns:
+            A ``pycocotools.coco.COCO`` instance, or ``None`` if pycocotools
+            is not installed.
+        """
+        try:
+            from pycocotools.coco import COCO
+        except ImportError:
+            return None
+
+        coco = COCO()
+        coco.dataset = self._merged_coco_dict
+        coco.createIndex()
+        return coco
 
     def _load_frame(self, video_path: Path, frame_idx: int) -> np.ndarray:
         """Load a specific frame from a video file.

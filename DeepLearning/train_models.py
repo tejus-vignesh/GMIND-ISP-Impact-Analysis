@@ -318,12 +318,14 @@ def evaluate_coco(
         if subset is not None and processed >= subset:
             break
 
-    # Get ground truth COCO object
-    if val_dataset is None and hasattr(data_loader.dataset, "coco"):
-        cocoGt = data_loader.dataset.coco
-    elif val_dataset is not None and hasattr(val_dataset, "coco"):
+    # Get ground truth COCO object (also guard against .coco being None)
+    cocoGt = None
+    if val_dataset is not None and getattr(val_dataset, "coco", None) is not None:
         cocoGt = val_dataset.coco
-    else:
+    elif getattr(data_loader.dataset, "coco", None) is not None:
+        cocoGt = data_loader.dataset.coco
+
+    if cocoGt is None:
         logger.warning("COCO ground truth not available in dataset; cannot run full COCO eval.")
         # Still save results if requested
         if save_results and results:
