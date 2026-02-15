@@ -235,9 +235,9 @@ def get_supported_models() -> List[str]:
     ]
 
 
-def save_checkpoint(state: dict, checkpoint_dir: str, epoch: int):
+def save_checkpoint(state: dict, checkpoint_dir: str, filename: str):
     Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
-    path = Path(checkpoint_dir) / f"checkpoint_epoch{epoch}.pth"
+    path = Path(checkpoint_dir) / filename
     torch.save(state, str(path))
     logger.info(f"Saved checkpoint: {path}")
 
@@ -1140,6 +1140,9 @@ def main():
             tb_writer = SummaryWriter(log_dir=str(tb_log_dir))
             logger.info(f"TensorBoard logging enabled: {tb_log_dir}")
 
+        best_map = -1.0
+        best_epoch = -1
+
         try:
             logger.info(f"Starting training for {args.epochs} epochs")
             for epoch in range(start_epoch, args.epochs):
@@ -1161,21 +1164,15 @@ def main():
                     f"Epoch {epoch}/{args.epochs-1} | Loss: {train_loss:.4f} | LR: {current_lr:.6f} | Time: {epoch_time:.1f}s"
                 )
 
-                checkpoint = {
-                    "epoch": epoch,
-                    "model_state": model.state_dict(),
-                    "optimizer_state": optimizer.state_dict(),
-                    "scaler_state": scaler.state_dict() if scaler is not None else None,
-                    "args": vars(args),
-                }
-                save_checkpoint(checkpoint, str(checkpoint_dir), epoch)
-
+                # Evaluate before saving so mAP is available for best-model tracking
+                current_map = None
                 if args.do_eval:
                     stats = evaluate_coco(model, val_loader, device, val_dataset=val_dataset)
                     if stats is not None:
-                        logger.info(f"COCO AP (0.5:0.95): {stats[0]:.4f}")
+                        current_map = stats[0]
+                        logger.info(f"COCO AP (0.5:0.95): {current_map:.4f}")
                         if tb_writer:
-                            tb_writer.add_scalar("val/mAP", stats[0], epoch)
+                            tb_writer.add_scalar("val/mAP", current_map, epoch)
                 else:
                     model.eval()
                     with torch.no_grad():
@@ -1184,9 +1181,28 @@ def main():
                         outputs = model(val_images)
                         num_dets = len(outputs[0].get("boxes", []))
                         logger.info(f"Sample validation: {num_dets} detections")
+
+                # Save checkpoints: always last.pth, conditionally best.pth
+                checkpoint = {
+                    "epoch": epoch,
+                    "model_state": model.state_dict(),
+                    "optimizer_state": optimizer.state_dict(),
+                    "scaler_state": scaler.state_dict() if scaler is not None else None,
+                    "args": vars(args),
+                }
+                save_checkpoint(checkpoint, str(checkpoint_dir), "last.pth")
+
+                if current_map is not None and current_map > best_map:
+                    best_map = current_map
+                    best_epoch = epoch
+                    save_checkpoint(checkpoint, str(checkpoint_dir), "best.pth")
+                    logger.info(f"New best model at epoch {epoch} with mAP {best_map:.4f}")
+
         except KeyboardInterrupt:
             logger.info("Training interrupted by user")
         finally:
+            if best_epoch >= 0:
+                logger.info(f"Best model from epoch {best_epoch} with mAP {best_map:.4f}")
             # Shutdown DataLoader workers
             if hasattr(train_loader, '_workers'):
                 train_loader._shutdown_workers()
