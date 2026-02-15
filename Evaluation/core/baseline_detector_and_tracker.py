@@ -951,6 +951,8 @@ def main():
     test_config = config.get("test", {})
     test_sets = test_config.get("sets", [])
     test_set_subdirs = test_config.get("set_subdirs", {})
+    test_percentage_split = test_config.get("percentage_split")
+    test_percentage_split_start = test_config.get("percentage_split_start")
 
     if not test_sets:
         print("Error: No test sets specified in config")
@@ -969,6 +971,8 @@ def main():
         frame_stride=frame_stride,
         max_frames=max_frames_per_video,
         set_subdirs=test_set_subdirs,
+        percentage_split=test_percentage_split,
+        percentage_split_start=test_percentage_split_start,
     )
     test_dataset = test_loader.dataset
 
