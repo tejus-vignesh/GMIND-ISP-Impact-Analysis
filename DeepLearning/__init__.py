@@ -21,9 +21,8 @@ __version__ = "1.0.0"
 __author__ = "GMIND Team"
 
 # Core modules
-from . import adapters, train_models
+from . import adapters
 
 __all__ = [
-    "train_models",
     "adapters",
 ]

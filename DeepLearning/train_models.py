@@ -493,7 +493,7 @@ def main():
     )
     parser.add_argument(
         "--augment-level",
-        default="medium",
+        default="light",
         choices=["light", "medium", "heavy"],
         help="Augmentation level for Ultralytics training (light/medium/heavy)",
     )
