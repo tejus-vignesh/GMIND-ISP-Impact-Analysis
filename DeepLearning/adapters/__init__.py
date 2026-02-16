@@ -45,7 +45,7 @@ def detect_backend(model_name: str) -> str:
         return "torchvision"
 
     # Ultralytics YOLO patterns (distinctive)
-    if any(x in model_lower for x in ["yolov", "rtdetr"]):
+    if any(x in model_lower for x in ["yolov", "yolo1", "yolo2", "yolo3", "rtdetr"]):
         return "ultralytics"
 
     # TorchVision patterns (check before MMDetection since there's overlap)

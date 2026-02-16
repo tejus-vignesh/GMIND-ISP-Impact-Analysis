@@ -36,6 +36,7 @@ SUPPORTED_MODELS = [
     "yolov8m",
     "yolov8l",
     "yolov8x",
+    "yolo26m",
     # MMDetection models (example names, update as needed)
     "mmdet_faster_rcnn_r50_fpn",
     "mmdet_mask_rcnn_r50_fpn",

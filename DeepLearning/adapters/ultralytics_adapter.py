@@ -1,7 +1,7 @@
 """Ultralytics YOLO adapter for object detection models.
 
 Provides a unified interface to build, train, and infer with Ultralytics YOLO models.
-Supports YOLOv5, YOLOv8, YOLOv9, YOLOv10, YOLOv11, YOLOv12, and RT-DETR models.
+Supports YOLOv5, YOLOv8, YOLOv9, YOLOv10, YOLOv11, YOLOv12, YOLO26, and RT-DETR models.
 
 Requires Ultralytics to be installed: pip install ultralytics
 """
@@ -84,35 +84,11 @@ def get_model(
 
         return model
     except FileNotFoundError as e:
-        # If model not found, try fallback for YOLOv12 -> YOLOv8 (most stable)
-        if "yolov12" in model_name.lower():
-            # Extract size suffix (n, s, m, l, x)
-            size_suffix = model_name.lower().replace("yolov12", "")
-            fallback_model = f"yolov8{size_suffix}"
-            logger.warning(
-                f"YOLOv12 model '{model_name}' not found. Trying fallback: {fallback_model}"
-            )
-            try:
-                model = YOLO(fallback_model)
-                logger.info(f"Successfully loaded fallback model: {fallback_model}")
-                return model
-            except Exception as e2:
-                # Try yolov11 as second fallback
-                fallback2 = f"yolov11{size_suffix}"
-                logger.warning(
-                    f"Fallback '{fallback_model}' also failed. Trying second fallback: {fallback2}"
-                )
-                try:
-                    model = YOLO(fallback2)
-                    logger.info(f"Successfully loaded second fallback model: {fallback2}")
-                    return model
-                except Exception as e3:
-                    raise RuntimeError(
-                        f"Failed to create Ultralytics YOLO model from '{source}' and fallbacks '{fallback_model}'/'{fallback2}': {e3}\n"
-                        f"Original error: {e}\n"
-                        f"Available models: yolov8n, yolov8s, yolov8m, yolov8l, yolov8x"
-                    )
-        raise RuntimeError(f"Failed to create Ultralytics YOLO model from '{source}': {e}")
+        raise RuntimeError(
+            f"Model '{model_name}' not found. Please verify the model name is correct "
+            f"and supported by your installed Ultralytics version.\n"
+            f"Original error: {e}"
+        )
     except Exception as e:
         raise RuntimeError(f"Failed to create Ultralytics YOLO model from '{source}': {e}")
 

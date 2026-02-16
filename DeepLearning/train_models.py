@@ -686,7 +686,7 @@ def main():
     # Note: YOLOv12 may not be available in all Ultralytics versions
     # If yolov12 fails, try yolov8 or yolov11 as fallback
     is_ultralytics = args.backend in ("ultralytics", "yolo") or (
-        args.backend == "auto" and any(x in args.model.lower() for x in ["yolov", "rtdetr"])
+        args.backend == "auto" and any(x in args.model.lower() for x in ["yolov", "yolo1", "yolo2", "yolo3", "rtdetr"])
     )
 
     logger.info(f"Building model: {args.model} with {args.num_classes} classes")
@@ -1020,6 +1020,13 @@ def main():
         train_kwargs.update(aug_config)
         logger.info(f"Using '{args.augment_level}' augmentation level")
 
+        # RT-DETR specific settings: disable AMP (known to cause NaN with
+        # transformer decoders) and use explicit optimizer instead of auto
+        if "rtdetr" in args.model.lower():
+            train_kwargs["amp"] = False
+            train_kwargs["deterministic"] = False  # F.grid_sample incompatibility
+            logger.info("RT-DETR detected: disabled AMP and deterministic mode (known NaN issues)")
+
         # Learning rate
         if args.lr:
             train_kwargs["lr0"] = args.lr
@@ -1033,7 +1040,7 @@ def main():
         logger.info("=" * 70)
         logger.info("ULTRAlytics Training Configuration")
         logger.info("=" * 70)
-        logger.info(f"Model: {args.model} (fallback: yolov8m)")
+        logger.info(f"Model: {args.model}")
         logger.info(f"Dataset: {expected_train_size} train, {expected_val_size} val images")
         logger.info(f"Epochs: {args.epochs}")
         logger.info(f"Batch size: {args.batch_size}")
