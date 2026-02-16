@@ -1,7 +1,7 @@
 """SLURM job orchestration for ISP sensitivity analysis.
 
 Discovers all ISP variants under the data directory and generates/submits
-one SLURM job per (variant, model) combination::
+one SLURM job per variant that trains all models in parallel on separate GPUs::
 
     python -m SensitivityAnalysis.submit_jobs \\
         --data-root /storage/data \\
@@ -23,16 +23,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DATA_ROOT = "/path/to/data"
-OUTPUT_ROOT = "/path/to/output"
+DATA_ROOT = "/data/Vijayakumar.TejusVignesh/GMIND/"
+OUTPUT_ROOT = "/data/Vijayakumar.TejusVignesh/sensitivity_results/"
 
 DEFAULT_MODELS = ["yolov8m", "yolo26m", "fasterrcnn_resnet50_fpn", "rtdetr-l"]
 
 MODEL_DEFAULTS = {
-    "yolov8m":                 {"batch_size": 32, "backend": "ultralytics", "epochs": 100, "lr": 0.01},
-    "yolo26m":                 {"batch_size": 32, "backend": "ultralytics", "epochs": 100, "lr": 0.01},
-    "fasterrcnn_resnet50_fpn": {"batch_size": 4,  "backend": "torchvision", "epochs": 100, "lr": 0.01},
-    "rtdetr-l":                {"batch_size": 32, "backend": "ultralytics", "epochs": 100, "lr": 0.01},
+    "yolov8m":                 {"batch_size": 64, "backend": "ultralytics", "epochs": 75, "lr": 0.001},
+    "yolo26m":                 {"batch_size": 64, "backend": "ultralytics", "epochs": 75, "lr": 0.001},
+    "fasterrcnn_resnet50_fpn": {"batch_size": 8,  "backend": "torchvision", "epochs": 30, "lr": 0.005},
+    "rtdetr-l":                {"batch_size": 32, "backend": "ultralytics", "epochs": 100, "lr": 0.0001},
 }
 
 
@@ -81,24 +81,24 @@ def discover_variants(
 
 def generate_slurm_script(
     variant: str,
-    model: str,
-    data_root: str,
+    models: List[str],
     output_dir: str,
-    epochs: int,
-    batch_size: int,
-    backend: str,
     partition: str,
     gpus: int,
     cpus_per_task: int,
     mail_user: str,
     config_path: str,
-    lr: float,
     num_workers: int,
+    cli_lr: float,
 ) -> str:
-    """Return the content of a SLURM batch script."""
-    job_name = f"train_{model}_{variant}"
+    """Return the content of a SLURM batch script.
 
-    script = textwrap.dedent(f"""\
+    Each model runs on a dedicated GPU via CUDA_VISIBLE_DEVICES, all in
+    parallel as background processes joined by a final ``wait``.
+    """
+    job_name = f"train_{variant}"
+
+    header = textwrap.dedent(f"""\
         #!/bin/bash
         #SBATCH --job-name={job_name}
         #SBATCH --output=logs/{job_name}_%j.out
@@ -111,22 +111,35 @@ def generate_slurm_script(
         #SBATCH --mail-user={mail_user}
         #SBATCH --mail-type=ALL
         module load miniconda/2405
-
-        conda run -n gmind python -m DeepLearning.train_models \\
-            --use-gmind \\
-            --gmind-config {config_path} \\
-            --isp-variant {variant} \\
-            --model {model} \\
-            --backend {backend} \\
-            --epochs {epochs} \\
-            --batch-size {batch_size} \\
-            --lr {lr} \\
-            --num-workers {num_workers} \\
-            --do-eval \\
-            --checkpoint-dir {output_dir} \\
-            --device cuda
     """)
-    return script
+
+    blocks = []
+    for gpu_idx, model in enumerate(models):
+        defaults = MODEL_DEFAULTS.get(model, {})
+        batch_size = defaults.get("batch_size", 32)
+        backend = defaults.get("backend", "auto")
+        epochs = defaults.get("epochs", 50)
+        lr = defaults.get("lr", cli_lr)
+
+        block = (
+            f"CUDA_VISIBLE_DEVICES={gpu_idx} conda run -n gmind "
+            f"python -m DeepLearning.train_models \\\n"
+            f"    --use-gmind \\\n"
+            f"    --gmind-config {config_path} \\\n"
+            f"    --isp-variant {variant} \\\n"
+            f"    --model {model} \\\n"
+            f"    --backend {backend} \\\n"
+            f"    --epochs {epochs} \\\n"
+            f"    --batch-size {batch_size} \\\n"
+            f"    --lr {lr} \\\n"
+            f"    --num-workers {num_workers} \\\n"
+            f"    --do-eval \\\n"
+            f"    --checkpoint-dir {output_dir} \\\n"
+            f"    --device cuda &"
+        )
+        blocks.append(block)
+
+    return header + "\n" + "\n\n".join(blocks) + "\n\nwait\n"
 
 
 # ---------------------------------------------------------------------------
@@ -146,8 +159,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--models", nargs="+", default=DEFAULT_MODELS)
 
     p.add_argument("--partition", default="gpuq")
-    p.add_argument("--gpus", type=int, default=1)
-    p.add_argument("--cpus-per-task", type=int, default=10)
+    p.add_argument("--gpus", type=int, default=4)
+    p.add_argument("--cpus-per-task", type=int, default=40)
     p.add_argument("--mail-user", default="vijayakumar.tejusvignesh@ul.ie")
     p.add_argument("--lr", type=float, default=0.01, help="Learning rate")
     p.add_argument("--num-workers", type=int, default=8, help="Number of data loader workers")
@@ -183,52 +196,44 @@ def main():
     scripts_dir = Path(__file__).resolve().parent.parent / "slurm_scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
 
-    total_jobs = len(variants) * len(args.models)
-    logger.info(f"Generating {total_jobs} jobs ({len(variants)} variants x {len(args.models)} models)")
+    total_jobs = len(variants)
+    logger.info(
+        f"Generating {total_jobs} jobs "
+        f"({len(variants)} variants, {len(args.models)} models per job)"
+    )
 
     submitted = 0
     for variant in variants:
-        for model in args.models:
-            defaults = MODEL_DEFAULTS.get(model, {})
-            batch_size = defaults.get("batch_size", 32)
-            backend = defaults.get("backend", "auto")
-            epochs = defaults.get("epochs", 50)
-            lr = defaults.get("lr", args.lr)
+        script_content = generate_slurm_script(
+            variant=variant,
+            models=args.models,
+            output_dir=str(output_root),
+            partition=args.partition,
+            gpus=args.gpus,
+            cpus_per_task=args.cpus_per_task,
+            mail_user=args.mail_user,
+            config_path=args.config,
+            num_workers=args.num_workers,
+            cli_lr=args.lr,
+        )
 
-            script_content = generate_slurm_script(
-                variant=variant,
-                model=model,
-                data_root=str(data_root),
-                output_dir=str(output_root),
-                epochs=epochs,
-                batch_size=batch_size,
-                backend=backend,
-                partition=args.partition,
-                gpus=args.gpus,
-                cpus_per_task=args.cpus_per_task,
-                mail_user=args.mail_user,
-                config_path=args.config,
-                lr=lr,
-                num_workers=args.num_workers,
+        script_path = scripts_dir / f"{variant}.sh"
+        script_path.write_text(script_content)
+
+        if args.dry_run:
+            logger.info(f"[DRY RUN] sbatch {script_path}")
+        elif args.generate_only:
+            logger.info(f"Generated: {script_path}")
+        else:
+            result = subprocess.run(
+                ["sbatch", str(script_path)],
+                capture_output=True, text=True,
             )
-
-            script_path = scripts_dir / f"{variant}_{model}.sh"
-            script_path.write_text(script_content)
-
-            if args.dry_run:
-                logger.info(f"[DRY RUN] sbatch {script_path}")
-            elif args.generate_only:
-                logger.info(f"Generated: {script_path}")
+            if result.returncode == 0:
+                logger.info(f"Submitted: {result.stdout.strip()} — {variant}")
+                submitted += 1
             else:
-                result = subprocess.run(
-                    ["sbatch", str(script_path)],
-                    capture_output=True, text=True,
-                )
-                if result.returncode == 0:
-                    logger.info(f"Submitted: {result.stdout.strip()} — {variant}/{model}")
-                    submitted += 1
-                else:
-                    logger.error(f"sbatch failed for {variant}/{model}: {result.stderr.strip()}")
+                logger.error(f"sbatch failed for {variant}: {result.stderr.strip()}")
 
     if not args.dry_run and not args.generate_only:
         logger.info(f"Submitted {submitted}/{total_jobs} jobs")
