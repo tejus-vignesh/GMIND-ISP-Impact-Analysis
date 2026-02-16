@@ -15,7 +15,7 @@ import logging
 import subprocess
 import textwrap
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import List, Set
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,13 +23,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+DATA_ROOT = "/path/to/data"
+OUTPUT_ROOT = "/path/to/output"
+
 DEFAULT_MODELS = ["yolov8m", "yolo26m", "fasterrcnn_resnet50_fpn", "rtdetr-l"]
 
 MODEL_DEFAULTS = {
-    "yolov8m":                 {"batch_size": 32, "backend": "ultralytics", "epochs": 100},
-    "yolo26m":                 {"batch_size": 32, "backend": "ultralytics", "epochs": 100},
-    "fasterrcnn_resnet50_fpn": {"batch_size": 4,  "backend": "torchvision", "epochs": 30},
-    "rtdetr-l":                {"batch_size": 32, "backend": "ultralytics", "epochs": 20},
+    "yolov8m":                 {"batch_size": 32, "backend": "ultralytics", "epochs": 100, "lr": 0.01},
+    "yolo26m":                 {"batch_size": 32, "backend": "ultralytics", "epochs": 100, "lr": 0.01},
+    "fasterrcnn_resnet50_fpn": {"batch_size": 4,  "backend": "torchvision", "epochs": 100, "lr": 0.01},
+    "rtdetr-l":                {"batch_size": 32, "backend": "ultralytics", "epochs": 100, "lr": 0.01},
 }
 
 
@@ -87,29 +90,26 @@ def generate_slurm_script(
     partition: str,
     gpus: int,
     cpus_per_task: int,
-    mail_user: Optional[str],
+    mail_user: str,
     config_path: str,
+    lr: float,
+    num_workers: int,
 ) -> str:
     """Return the content of a SLURM batch script."""
-    job_name = f"isp_{variant}_{model}"
-    # SLURM logs go next to model outputs (model/variant/)
-    log_dir = str(Path(output_dir) / model / variant)
-    mail_lines = ""
-    if mail_user:
-        mail_lines = textwrap.dedent(f"""\
-            #SBATCH --mail-type=ALL
-            #SBATCH --mail-user={mail_user}
-        """)
+    job_name = f"train_{model}_{variant}"
 
     script = textwrap.dedent(f"""\
         #!/bin/bash
         #SBATCH --job-name={job_name}
+        #SBATCH --output=logs/{job_name}_%j.out
+        #SBATCH --error=logs/{job_name}_%j.err
         #SBATCH --partition={partition}
-        #SBATCH --gres=gpu:{gpus}
+        #SBATCH --nodes=1
+        #SBATCH --ntasks=1
         #SBATCH --cpus-per-task={cpus_per_task}
-        #SBATCH --output={log_dir}/slurm_%j.out
-        #SBATCH --error={log_dir}/slurm_%j.err
-        {mail_lines}
+        #SBATCH --gres=gpu:{gpus}
+        #SBATCH --mail-user={mail_user}
+        #SBATCH --mail-type=ALL
         module load miniconda/2405
 
         conda run -n gmind python -m DeepLearning.train_models \\
@@ -120,6 +120,9 @@ def generate_slurm_script(
             --backend {backend} \\
             --epochs {epochs} \\
             --batch-size {batch_size} \\
+            --lr {lr} \\
+            --num-workers {num_workers} \\
+            --do-eval \\
             --checkpoint-dir {output_dir} \\
             --device cuda
     """)
@@ -134,18 +137,20 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Discover ISP variants and submit SLURM training jobs"
     )
-    p.add_argument("--data-root", required=True, help="Root data directory")
-    p.add_argument("--output-root", required=True, help="Root output directory")
+    p.add_argument("--data-root", default=DATA_ROOT, help="Root data directory")
+    p.add_argument("--output-root", default=OUTPUT_ROOT, help="Root output directory")
 
     p.add_argument("--sensor", default="FLIR8.9")
     p.add_argument("--sets", nargs="+", default=["NightUrbanJunction"])
     p.add_argument("--subdirs", nargs="+", type=int, default=[1, 2])
     p.add_argument("--models", nargs="+", default=DEFAULT_MODELS)
 
-    p.add_argument("--partition", default="gpu")
+    p.add_argument("--partition", default="gpuq")
     p.add_argument("--gpus", type=int, default=1)
-    p.add_argument("--cpus-per-task", type=int, default=8)
-    p.add_argument("--mail-user", default=None)
+    p.add_argument("--cpus-per-task", type=int, default=10)
+    p.add_argument("--mail-user", default="vijayakumar.tejusvignesh@ul.ie")
+    p.add_argument("--lr", type=float, default=0.01, help="Learning rate")
+    p.add_argument("--num-workers", type=int, default=8, help="Number of data loader workers")
 
     p.add_argument(
         "--variants", nargs="+", default=None,
@@ -188,6 +193,7 @@ def main():
             batch_size = defaults.get("batch_size", 32)
             backend = defaults.get("backend", "auto")
             epochs = defaults.get("epochs", 50)
+            lr = defaults.get("lr", args.lr)
 
             script_content = generate_slurm_script(
                 variant=variant,
@@ -202,6 +208,8 @@ def main():
                 cpus_per_task=args.cpus_per_task,
                 mail_user=args.mail_user,
                 config_path=args.config,
+                lr=lr,
+                num_workers=args.num_workers,
             )
 
             script_path = scripts_dir / f"{variant}_{model}.sh"
