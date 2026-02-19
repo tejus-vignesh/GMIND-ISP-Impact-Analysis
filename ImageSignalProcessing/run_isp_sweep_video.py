@@ -317,19 +317,29 @@ def create_video_from_pngs(save_dir, out_parent, dir_name, video_framerate):
         .output(out_video_path, vcodec="libx264", crf=12, pix_fmt="yuv420p")
         .overwrite_output()
         .global_args("-loglevel", "error")
-        .run_async(pipe_stdin=True)
+        .run_async(pipe_stdin=True, pipe_stderr=True)
     )
 
-    for img in tqdm(img_info, desc=f"Writing video frames", unit="frame", leave=False):
-        frame_path = os.path.join(save_dir, img[0])
-        frame = cv2.imread(frame_path)
-        if frame.shape[:2] != (h, w):
-            logger.debug(f"Resizing frame {img[0]}: {frame.shape[:2]} -> ({h}, {w})")
-            frame = cv2.resize(frame, (w, h))
-        process.stdin.write(frame.astype(np.uint8).tobytes())
+    try:
+        for img in tqdm(img_info, desc=f"Writing video frames", unit="frame", leave=False):
+            frame_path = os.path.join(save_dir, img[0])
+            frame = cv2.imread(frame_path)
+            if frame.shape[:2] != (h, w):
+                logger.debug(f"Resizing frame {img[0]}: {frame.shape[:2]} -> ({h}, {w})")
+                frame = cv2.resize(frame, (w, h))
+            process.stdin.write(frame.astype(np.uint8).tobytes())
+    except BrokenPipeError:
+        stderr_output = process.stderr.read().decode() if process.stderr else "no stderr captured"
+        logger.error(f"ffmpeg process died. stderr: {stderr_output}")
+        process.wait()
+        raise RuntimeError(f"ffmpeg failed for {out_video_path}: {stderr_output}")
 
     process.stdin.close()
     process.wait()
+    stderr_output = process.stderr.read().decode() if process.stderr else ""
+    if process.returncode != 0:
+        logger.error(f"ffmpeg exited with code {process.returncode}: {stderr_output}")
+        raise RuntimeError(f"ffmpeg failed for {out_video_path}: {stderr_output}")
     logger.info(f"Video saved: {out_video_path}")
 
 
