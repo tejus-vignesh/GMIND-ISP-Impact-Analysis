@@ -54,7 +54,7 @@ SAVE_VIDEO = True
 SAVE_PNG = True
 
 # Global setting for number of processes in batch pipeline
-NUM_PROCESSES = 12  # Set to "Auto" to enable auto-tuning, or an integer for manual
+NUM_PROCESSES = 32  # Set to "Auto" to enable auto-tuning, or an integer for manual
 
 # Global setting for video framerate (user must set this)
 VIDEO_FRAMERATE = 30
@@ -298,12 +298,20 @@ if __name__ == "__main__":
     # process_and_show_single_image('path/to/image.png', './configs/your_config.yaml', 'output_test.png')
 
     # 2. Batch process multiple sets of images using a dict:
-    image_dict = {
-        "FLIR8.9": ["H:/DanganDataset-Formatted2/Day/DistanceTest/1/FLIR-8.9/PNG"],
-    }
-    out_dir = "Parent"
+    # image_dict = {
+    #     "FLIR8.9": ["/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/1/RAW_Images/FLIR8.9/"],
+    # }
+    # out_dir = "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/1/Processed_Images/FLIR8.9/"
+    # os.makedirs(out_dir, exist_ok=True)
 
-    if NUM_PROCESSES == "Auto":
-        auto_set_num_processes(image_dict, CONFIG_DIR, load_bayer, Pipeline)
+    # if NUM_PROCESSES == "Auto":
+    #     auto_set_num_processes(image_dict, CONFIG_DIR, load_bayer, Pipeline)
     # ---
+    image_dict = {
+        "FLIR8.9_Bayer_GC": ["/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/1/RAW_Images/FLIR8.9"],
+    }
+    #Create a directory to save the processed images
+    out_dir = "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/1/Processed_Images/Bayer/"
+    os.makedirs(out_dir, exist_ok=True)
+    # # ---Tejus
     process_image_dict(image_dict, out_dir)

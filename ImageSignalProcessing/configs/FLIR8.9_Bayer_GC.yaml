@@ -8,7 +8,7 @@ module_enable_status:                 # do NOT modify modules order
   scl: False
   ccm: False
   gac: False
-  gac_bayer: True
+  gac_bayer: False
   tvc: False
   wnf: False
   csc: False
