@@ -239,7 +239,12 @@ def compute_coco_metrics(coco_gt: COCO, coco_results: List[Dict]) -> Dict[str, f
     }
 
 
-def compute_per_class_ap(coco_gt: COCO, coco_dt: COCO, metric: str = "AP50-95") -> Dict[str, float]:
+def compute_per_class_ap(
+    coco_gt: COCO,
+    coco_dt: COCO,
+    metric: str = "AP50-95",
+    img_ids: Optional[List[int]] = None,
+) -> Dict[str, float]:
     """
     Compute Average Precision (AP) for each object class separately.
 
@@ -252,6 +257,9 @@ def compute_per_class_ap(coco_gt: COCO, coco_dt: COCO, metric: str = "AP50-95") 
         metric: Which AP metric to compute:
                 - "AP50-95": Average Precision over IoU 0.5:0.05:0.95 (default)
                 - "AP50": Average Precision at IoU threshold 0.5
+                - "AP75": Average Precision at IoU threshold 0.75
+        img_ids: Optional list of image IDs to evaluate on. If None, all
+                 images in coco_gt are used.
 
     Returns:
         Dictionary mapping class name (string) to AP value (float).
@@ -266,12 +274,15 @@ def compute_per_class_ap(coco_gt: COCO, coco_dt: COCO, metric: str = "AP50-95") 
     categories = coco_gt.loadCats(coco_gt.getCatIds())
     per_class_ap = {}
 
-    stat_idx = 0 if metric == "AP50-95" else 1
+    stat_idx_map = {"AP50-95": 0, "AP50": 1, "AP75": 2}
+    stat_idx = stat_idx_map.get(metric, 0)
+
+    eval_img_ids = img_ids if img_ids is not None else list(coco_gt.imgs.keys())
 
     for cat in categories:
         cat_id = cat["id"]
         coco_eval = COCOeval(coco_gt, coco_dt, "bbox")
-        coco_eval.params.imgIds = list(coco_gt.imgs.keys())
+        coco_eval.params.imgIds = eval_img_ids
         coco_eval.params.catIds = [cat_id]
         coco_eval.evaluate()
         coco_eval.accumulate()
@@ -462,6 +473,7 @@ def compute_distance_binned_metrics(
     camera_pitch_deg: float,
     bin_edges: List[float],
     evaluated_img_ids: Optional[List[int]] = None,
+    per_class: bool = False,
 ) -> Dict[str, Dict]:
     """Compute COCO metrics grouped by distance bins.
 
@@ -585,6 +597,16 @@ def compute_distance_binned_metrics(
 
         metrics = compute_coco_metrics(filtered_coco_gt, filtered_preds)
         metrics["num_gt"] = len(ann_ids_in_bin)
+
+        if per_class:
+            coco_dt = filtered_coco_gt.loadRes(filtered_preds)
+            pc = {}
+            for m in ("AP50-95", "AP50", "AP75"):
+                class_ap = compute_per_class_ap(filtered_coco_gt, coco_dt, metric=m)
+                for cls_name, val in class_ap.items():
+                    pc.setdefault(cls_name, {})[m] = float(val)
+            metrics["per_class"] = pc
+
         binned_metrics[label] = metrics
 
         logger.info(

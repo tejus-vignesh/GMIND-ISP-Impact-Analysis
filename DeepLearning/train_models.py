@@ -829,12 +829,24 @@ def main():
                             camera_pitch_deg=dist_cfg["camera_pitch_deg"],
                             bin_edges=dist_cfg["bins"],
                             evaluated_img_ids=eval_img_ids,
+                            per_class=True,
                         )
             else:
                 logger.error(
                     "Cannot run distance binning: evaluation failed "
                     f"(stats={stats is not None}, coco_gt={eval_coco_gt is not None})"
                 )
+
+            # Compute overall per-class metrics
+            per_class_metrics = None
+            if stats is not None and eval_coco_gt is not None and eval_results:
+                from Evaluation.analysis.analysis_utils import compute_per_class_ap
+                coco_dt = eval_coco_gt.loadRes(eval_results)
+                per_class_metrics = {}
+                for metric in ("AP50-95", "AP50", "AP75"):
+                    class_ap = compute_per_class_ap(eval_coco_gt, coco_dt, metric=metric, img_ids=eval_img_ids)
+                    for cls_name, val in class_ap.items():
+                        per_class_metrics.setdefault(cls_name, {})[metric.lower()] = float(val)
 
             # Save results
             if args.eval_output:
@@ -845,6 +857,8 @@ def main():
                     "map50": float(stats[1]) if stats is not None else None,
                     "map75": float(stats[2]) if stats is not None else None,
                 }
+                if per_class_metrics is not None:
+                    results_dict["per_class"] = per_class_metrics
                 if distance_binned is not None:
                     results_dict["distance_binned_metrics"] = distance_binned
                 output_path = Path(args.eval_output)
@@ -990,7 +1004,19 @@ def main():
                             camera_pitch_deg=dist_cfg["camera_pitch_deg"],
                             bin_edges=dist_cfg["bins"],
                             evaluated_img_ids=eval_img_ids,
+                            per_class=True,
                         )
+
+        # Compute overall per-class metrics
+        per_class_metrics = None
+        if stats is not None and eval_coco_gt is not None and eval_results:
+            from Evaluation.analysis.analysis_utils import compute_per_class_ap
+            coco_dt = eval_coco_gt.loadRes(eval_results)
+            per_class_metrics = {}
+            for metric in ("AP50-95", "AP50", "AP75"):
+                class_ap = compute_per_class_ap(eval_coco_gt, coco_dt, metric=metric, img_ids=eval_img_ids)
+                for cls_name, val in class_ap.items():
+                    per_class_metrics.setdefault(cls_name, {})[metric.lower()] = float(val)
 
         # Save YOLO-style summary (model, checkpoint, mAP, distance bins)
         if args.eval_output:
@@ -1001,6 +1027,8 @@ def main():
                 "map50": float(stats[1]) if stats is not None else None,
                 "map75": float(stats[2]) if stats is not None else None,
             }
+            if per_class_metrics is not None:
+                results_dict["per_class"] = per_class_metrics
             if distance_binned is not None:
                 results_dict["distance_binned_metrics"] = distance_binned
             output_path = Path(args.eval_output)
