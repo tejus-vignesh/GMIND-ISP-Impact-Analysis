@@ -242,6 +242,40 @@ def save_checkpoint(state: dict, checkpoint_dir: str, filename: str):
     logger.info(f"Saved checkpoint: {path}")
 
 
+class _YOLOTorchVisionAdapter:
+    """Wrap an Ultralytics YOLO model so it can be used with evaluate_coco().
+
+    evaluate_coco() expects a model that:
+      - Has an `eval()` method
+      - Is callable with a list of image tensors
+      - Returns a list of dicts with "boxes", "scores", "labels" keys
+
+    This adapter converts Ultralytics Result objects to that format.
+    """
+
+    def __init__(self, yolo_model):
+        self.model = yolo_model
+
+    def eval(self):
+        self.model.eval()
+
+    def __call__(self, images):
+        np_images = [
+            img.mul(255).byte().permute(1, 2, 0).cpu().numpy()
+            for img in images
+        ]
+        results = self.model(np_images, verbose=False)
+        outputs = []
+        for r in results:
+            boxes = r.boxes
+            outputs.append({
+                "boxes": boxes.xyxy,       # already [x1,y1,x2,y2] tensor
+                "scores": boxes.conf,
+                "labels": boxes.cls.int() + 1,  # YOLO 0-indexed → COCO 1-indexed
+            })
+        return outputs
+
+
 def evaluate_coco(
     model,
     data_loader,
@@ -249,7 +283,7 @@ def evaluate_coco(
     val_dataset=None,
     save_results: Optional[str] = None,
     subset: Optional[int] = None,
-) -> Optional[list]:
+) -> Tuple[Optional[list], List[Dict], Optional[Any], List[int]]:
     """Run COCO evaluation (bbox) using pycocotools if available.
 
     Args:
@@ -261,14 +295,19 @@ def evaluate_coco(
         subset: Only evaluate on subset of images (for quick tests)
 
     Returns:
-        COCOeval.stats array if successful, otherwise None
+        Tuple of (stats, results, coco_gt, img_ids):
+        - stats: COCOeval.stats array if successful, otherwise None
+        - results: List of prediction dicts in COCO results format
+        - coco_gt: COCO ground truth object, or None if unavailable
+        - img_ids: List of all image IDs that were evaluated (includes
+          frames with zero detections)
     """
     try:
         from pycocotools.coco import COCO
         from pycocotools.cocoeval import COCOeval
     except ImportError:
         logger.warning("pycocotools not installed; skipping COCO evaluation.")
-        return None
+        return None, [], None, []
 
     model.eval()
     results = []
@@ -331,7 +370,7 @@ def evaluate_coco(
         if save_results and results:
             with open(save_results, "w") as f:
                 json.dump(results, f)
-        return None
+        return None, results, None, list(sorted(set(img_ids)))
 
     if len(results) == 0:
         logger.warning("No detections produced; skipping COCO eval.")
@@ -339,7 +378,7 @@ def evaluate_coco(
         if save_results:
             with open(save_results, "w") as f:
                 json.dump(results, f)
-        return None
+        return None, [], cocoGt, list(sorted(set(img_ids)))
 
     # Save raw results if requested
     if save_results:
@@ -355,7 +394,7 @@ def evaluate_coco(
     cocoEval.accumulate()
     cocoEval.summarize()
 
-    return cocoEval.stats
+    return cocoEval.stats, results, cocoGt, list(sorted(set(img_ids)))
 
 
 def load_checkpoint(
@@ -490,6 +529,11 @@ def main():
     parser.add_argument("--eval-output", default=None, help="Path to write detection results JSON")
     parser.add_argument(
         "--eval-subset", type=int, default=None, help="Only run inference on subset of images"
+    )
+    parser.add_argument(
+        "--bin-distance",
+        action="store_true",
+        help="Enable distance-binned evaluation metrics (requires distance_eval config in sensitivity_config.yaml)",
     )
     parser.add_argument(
         "--augment-level",
@@ -728,57 +772,137 @@ def main():
         else:
             logger.info(f"Using default model: {args.model}")
 
-        # Resolve data.yaml path
-        if args.isp_variant:
-            yolo_export_dir = Path(args.checkpoint_dir) / "yolo_datasets" / args.isp_variant
-        else:
-            yolo_export_dir = checkpoint_dir / "yolo_dataset"
-        data_yaml = yolo_export_dir / "data.yaml"
+        if args.bin_distance:
+            # --- Distance-binned path: route through evaluate_coco() ---
+            logger.info("Distance binning enabled — using evaluate_coco() for YOLO")
 
-        # Export dataset if not already done
-        if not data_yaml.exists():
-            yolo_export_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Exporting GMIND dataset to YOLO format: {yolo_export_dir}")
-            from DataLoader.export_to_yolo import export_gmind_to_yolo
+            # Pre-extract frames to disk for faster loading (avoids repeated video decode)
+            if args.use_gmind:
+                if args.isp_variant:
+                    frame_cache_base = Path(args.checkpoint_dir) / "torchvision_datasets" / args.isp_variant
+                else:
+                    frame_cache_base = Path(args.checkpoint_dir) / "torchvision_datasets"
+                val_dataset.extract_frames(frame_cache_base / "val")
 
-            data_yaml = export_gmind_to_yolo(
-                train_dataset=train_dataset,
+            adapted_model = _YOLOTorchVisionAdapter(model)
+            stats, eval_results, eval_coco_gt, eval_img_ids = evaluate_coco(
+                adapted_model,
+                val_loader,
+                device,
                 val_dataset=val_dataset,
-                out_dir=str(yolo_export_dir),
+                subset=args.eval_subset,
             )
 
-        # Run validation
-        device_str = str(device) if device.type == "cuda" else "cpu"
-        metrics = model.val(data=str(data_yaml), device=device_str, split="val")
+            # Log overall results
+            logger.info("=" * 70)
+            logger.info("YOLO Evaluation Results (via evaluate_coco)")
+            logger.info("=" * 70)
+            if stats is not None:
+                logger.info(f"AP50-95: {stats[0]:.4f}")
+                logger.info(f"AP50:    {stats[1]:.4f}")
+                logger.info(f"AP75:    {stats[2]:.4f}")
 
-        # Log results
-        logger.info("=" * 70)
-        logger.info("YOLO Evaluation Results")
-        logger.info("=" * 70)
-        if hasattr(metrics, "box"):
-            logger.info(f"AP50-95: {metrics.box.map:.4f}")
-            logger.info(f"AP50:    {metrics.box.map50:.4f}")
-            logger.info(f"AP75:    {metrics.box.map75:.4f}")
+            # Run distance binning
+            distance_binned = None
+            if stats is not None and eval_coco_gt is not None:
+                from Evaluation.analysis.analysis_utils import compute_distance_binned_metrics
+                from Annotation.annotation_generation import parse_camera_intrinsics_from_calibration
 
-        # Save results if requested
-        if args.eval_output:
-            import json
+                dist_cfg = config.get("distance_eval")
+                if dist_cfg is None:
+                    logger.error("--bin-distance requires 'distance_eval' section in config")
+                else:
+                    # sensor_calibration.txt lives in the project root
+                    project_root = Path(__file__).resolve().parent.parent
+                    calib_path = project_root / "sensor_calibration.txt"
+                    camera_matrix, _ = parse_camera_intrinsics_from_calibration(
+                        str(calib_path), camera_name=sensor,
+                    )
+                    if camera_matrix is None:
+                        logger.error(f"Failed to parse camera intrinsics from {calib_path}")
+                    else:
+                        distance_binned = compute_distance_binned_metrics(
+                            coco_gt=eval_coco_gt,
+                            coco_results=eval_results,
+                            camera_matrix=camera_matrix,
+                            camera_height=dist_cfg["camera_height"],
+                            camera_pitch_deg=dist_cfg["camera_pitch_deg"],
+                            bin_edges=dist_cfg["bins"],
+                            evaluated_img_ids=eval_img_ids,
+                        )
+            else:
+                logger.error(
+                    "Cannot run distance binning: evaluation failed "
+                    f"(stats={stats is not None}, coco_gt={eval_coco_gt is not None})"
+                )
 
-            results_dict = {
-                "model": args.model,
-                "checkpoint": args.eval_checkpoint,
-                "map50-95": metrics.box.map,
-                "map50": metrics.box.map50,
-                "map75": metrics.box.map75,
-                "per_class_map50": metrics.box.maps.tolist()
-                if hasattr(metrics.box.maps, "tolist")
-                else list(metrics.box.maps),
-            }
-            output_path = Path(args.eval_output)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, "w") as f:
-                json.dump(results_dict, f, indent=2)
-            logger.info(f"Results saved to: {output_path}")
+            # Save results
+            if args.eval_output:
+                results_dict = {
+                    "model": args.model,
+                    "checkpoint": args.eval_checkpoint,
+                    "map50-95": float(stats[0]) if stats is not None else None,
+                    "map50": float(stats[1]) if stats is not None else None,
+                    "map75": float(stats[2]) if stats is not None else None,
+                }
+                if distance_binned is not None:
+                    results_dict["distance_binned_metrics"] = distance_binned
+                output_path = Path(args.eval_output)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(output_path, "w") as f:
+                    json.dump(results_dict, f, indent=2)
+                logger.info(f"Results saved to: {output_path}")
+        else:
+            # --- Standard YOLO path: model.val() (unchanged) ---
+            # Resolve data.yaml path
+            if args.isp_variant:
+                yolo_export_dir = Path(args.checkpoint_dir) / "yolo_datasets" / args.isp_variant
+            else:
+                yolo_export_dir = checkpoint_dir / "yolo_dataset"
+            data_yaml = yolo_export_dir / "data.yaml"
+
+            # Export dataset if not already done
+            if not data_yaml.exists():
+                yolo_export_dir.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Exporting GMIND dataset to YOLO format: {yolo_export_dir}")
+                from DataLoader.export_to_yolo import export_gmind_to_yolo
+
+                data_yaml = export_gmind_to_yolo(
+                    train_dataset=train_dataset,
+                    val_dataset=val_dataset,
+                    out_dir=str(yolo_export_dir),
+                )
+
+            # Run validation
+            device_str = str(device) if device.type == "cuda" else "cpu"
+            metrics = model.val(data=str(data_yaml), device=device_str, split="val")
+
+            # Log results
+            logger.info("=" * 70)
+            logger.info("YOLO Evaluation Results")
+            logger.info("=" * 70)
+            if hasattr(metrics, "box"):
+                logger.info(f"AP50-95: {metrics.box.map:.4f}")
+                logger.info(f"AP50:    {metrics.box.map50:.4f}")
+                logger.info(f"AP75:    {metrics.box.map75:.4f}")
+
+            # Save results if requested
+            if args.eval_output:
+                results_dict = {
+                    "model": args.model,
+                    "checkpoint": args.eval_checkpoint,
+                    "map50-95": metrics.box.map,
+                    "map50": metrics.box.map50,
+                    "map75": metrics.box.map75,
+                    "per_class_map50": metrics.box.maps.tolist()
+                    if hasattr(metrics.box.maps, "tolist")
+                    else list(metrics.box.maps),
+                }
+                output_path = Path(args.eval_output)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(output_path, "w") as f:
+                    json.dump(results_dict, f, indent=2)
+                logger.info(f"Results saved to: {output_path}")
 
         logger.info("Evaluation complete")
         return
@@ -809,16 +933,82 @@ def main():
                 collate_fn=collate_fn,
             )
 
-        stats = evaluate_coco(
+        # Extract frames to cache (avoids on-the-fly video decode)
+        if args.use_gmind:
+            if args.isp_variant:
+                frame_cache_base = Path(args.checkpoint_dir) / "torchvision_datasets" / args.isp_variant
+            else:
+                frame_cache_base = Path(args.checkpoint_dir) / "torchvision_datasets"
+            val_dataset.extract_frames(frame_cache_base / "val")
+
+        detections_path = None
+        if args.eval_output:
+            eval_output_path = Path(args.eval_output)
+            detections_path = eval_output_path.parent / f"{eval_output_path.stem}_detections.json"
+
+        stats, eval_results, eval_coco_gt, eval_img_ids = evaluate_coco(
             model,
             val_loader,
             device,
             val_dataset=val_dataset,
-            save_results=args.eval_output,
+            save_results=str(detections_path) if detections_path else None,
             subset=args.eval_subset,
         )
         if stats is not None:
             logger.info(f"COCO AP (0.5:0.95): {stats[0]:.4f}")
+
+        # Distance-binned evaluation (opt-in)
+        distance_binned = None
+        if args.bin_distance:
+            if stats is None or eval_coco_gt is None:
+                logger.error(
+                    "Cannot run distance binning: evaluation failed "
+                    f"(stats={stats is not None}, coco_gt={eval_coco_gt is not None})"
+                )
+            else:
+                from Evaluation.analysis.analysis_utils import compute_distance_binned_metrics
+                from Annotation.annotation_generation import parse_camera_intrinsics_from_calibration
+
+                dist_cfg = config.get("distance_eval")
+                if dist_cfg is None:
+                    logger.error("--bin-distance requires 'distance_eval' section in config")
+                else:
+                    # sensor_calibration.txt lives in the project root
+                    project_root = Path(__file__).resolve().parent.parent
+                    calib_path = project_root / "sensor_calibration.txt"
+                    camera_matrix, _ = parse_camera_intrinsics_from_calibration(
+                        str(calib_path), camera_name=sensor,
+                    )
+                    if camera_matrix is None:
+                        logger.error(f"Failed to parse camera intrinsics from {calib_path}")
+                    else:
+                        distance_binned = compute_distance_binned_metrics(
+                            coco_gt=eval_coco_gt,
+                            coco_results=eval_results,
+                            camera_matrix=camera_matrix,
+                            camera_height=dist_cfg["camera_height"],
+                            camera_pitch_deg=dist_cfg["camera_pitch_deg"],
+                            bin_edges=dist_cfg["bins"],
+                            evaluated_img_ids=eval_img_ids,
+                        )
+
+        # Save YOLO-style summary (model, checkpoint, mAP, distance bins)
+        if args.eval_output:
+            results_dict = {
+                "model": args.model,
+                "checkpoint": args.eval_checkpoint,
+                "map50-95": float(stats[0]) if stats is not None else None,
+                "map50": float(stats[1]) if stats is not None else None,
+                "map75": float(stats[2]) if stats is not None else None,
+            }
+            if distance_binned is not None:
+                results_dict["distance_binned_metrics"] = distance_binned
+            output_path = Path(args.eval_output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, "w") as f:
+                json.dump(results_dict, f, indent=2)
+            logger.info(f"Results saved to: {output_path}")
+
         logger.info("Evaluation complete")
         return
     # Handle Ultralytics models differently
@@ -1174,7 +1364,7 @@ def main():
                 # Evaluate before saving so mAP is available for best-model tracking
                 current_map = None
                 if args.do_eval:
-                    stats = evaluate_coco(model, val_loader, device, val_dataset=val_dataset)
+                    stats, _, _, _ = evaluate_coco(model, val_loader, device, val_dataset=val_dataset)
                     if stats is not None:
                         current_map = stats[0]
                         logger.info(f"COCO AP (0.5:0.95): {current_map:.4f}")

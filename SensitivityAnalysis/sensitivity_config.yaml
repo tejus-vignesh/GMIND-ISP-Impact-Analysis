@@ -29,3 +29,8 @@ test:
     "NightUrbanJunction/2": 0.6
   percentage_split:
     "NightUrbanJunction/2": 0.4
+
+distance_eval:
+  camera_height: 4.0        # meters above ground
+  camera_pitch_deg: 20.0    # degrees, positive = downward
+  bins: [0, 25, 50, 75]  # bin edges in meters (produces: 0-20, 20-40, ..., 80-100, 100+)

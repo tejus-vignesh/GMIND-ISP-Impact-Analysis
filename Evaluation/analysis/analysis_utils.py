@@ -7,15 +7,17 @@ This module provides reusable functions for:
 - Matching predictions to ground truth annotations
 - Computing COCO evaluation metrics
 - Grouping and organising annotation data
+- Distance-binned evaluation metrics
 
 All functions use COCO format conventions:
 - Bounding boxes: [x, y, width, height] where (x, y) is top-left corner
 - Area categories: small (< 32²), medium (32² - 96²), large (≥ 96²)
 """
 
+import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from pycocotools.coco import COCO
@@ -369,3 +371,230 @@ def get_video_image_mapping(
         video_image_ids[video_name].append(image_id)
 
     return video_image_ids
+
+
+logger = logging.getLogger(__name__)
+
+
+def _compute_bbox_distances(
+    bboxes: List[Dict],
+    id_key: str,
+    camera_matrix: np.ndarray,
+    camera_height: float,
+    camera_pitch_deg: float,
+) -> Dict[int, float]:
+    """Project each bbox onto the ground plane and return its forward distance.
+
+    Works for both GT annotations and prediction dicts — the only difference
+    is which key holds the unique identifier (``"id"`` for GT, we'll use the
+    list index for predictions since they don't have unique IDs).
+
+    Args:
+        bboxes: List of dicts, each with a ``"bbox"`` key in COCO format
+                ``[x, y, w, h]``.
+        id_key: Key to use as the unique identifier in the returned dict.
+                For GT annotations this is ``"id"``; for predictions we pass
+                a synthetic ``"_idx"`` key added by the caller.
+        camera_matrix: 3×3 camera intrinsics.
+        camera_height: Camera height above ground (metres).
+        camera_pitch_deg: Camera pitch (degrees, positive = downward).
+
+    Returns:
+        Dict mapping identifier → forward distance in metres.
+        Entries where the ray didn't hit the ground plane are omitted.
+    """
+    from Annotation.footpoint_to_ground import bbox_to_3d_geometric_robust
+
+    distances: Dict[int, float] = {}
+    for item in bboxes:
+        x, y, w, h = item["bbox"]
+        bbox_xyxy = np.array([x, y, x + w, y + h], dtype=np.float32)
+        point_3d = bbox_to_3d_geometric_robust(
+            bbox_xyxy, camera_matrix, camera_height, camera_pitch_deg
+        )
+        if point_3d is not None:
+            # Y component is forward distance from camera
+            distances[item[id_key]] = float(point_3d[1])
+    return distances
+
+
+def _bin_label(bin_idx: int, bin_edges: List[float]) -> str:
+    """Return a human-readable label for a ``np.digitize`` bin index."""
+    if bin_idx <= 0:
+        return f"<{bin_edges[0]}m"
+    elif bin_idx >= len(bin_edges):
+        return f"{bin_edges[-1]}m+"
+    else:
+        return f"{bin_edges[bin_idx - 1]}-{bin_edges[bin_idx]}m"
+
+
+def _assign_bins(
+    ids: List[int],
+    distances: Dict[int, float],
+    bin_edges: List[float],
+) -> Dict[str, List[int]]:
+    """Group IDs into distance bins.
+
+    Args:
+        ids: All candidate IDs (GT annotation IDs or prediction indices).
+        distances: Mapping of id → distance.  IDs not present in this dict
+                   (ray missed ground) are skipped.
+        bin_edges: Sorted bin edge values in metres.
+
+    Returns:
+        Dict mapping bin label (e.g. ``"0-20m"``) to list of IDs in that bin.
+    """
+    bin_edges = sorted(bin_edges)
+    bins: Dict[str, List[int]] = defaultdict(list)
+    for item_id in ids:
+        if item_id not in distances:
+            continue
+        idx = int(np.digitize(distances[item_id], bin_edges))
+        bins[_bin_label(idx, bin_edges)].append(item_id)
+    return bins
+
+
+def compute_distance_binned_metrics(
+    coco_gt: COCO,
+    coco_results: List[Dict],
+    camera_matrix: np.ndarray,
+    camera_height: float,
+    camera_pitch_deg: float,
+    bin_edges: List[float],
+    evaluated_img_ids: Optional[List[int]] = None,
+) -> Dict[str, Dict]:
+    """Compute COCO metrics grouped by distance bins.
+
+    Both GT annotations and predictions are projected onto the ground plane
+    so that each bin is evaluated with only the GT *and* predictions that
+    fall in that distance range.  This avoids false-positive inflation when
+    an image contains objects at multiple distances.
+
+    Args:
+        coco_gt: COCO ground truth object.
+        coco_results: Prediction results in COCO format.
+        camera_matrix: 3×3 camera intrinsics.
+        camera_height: Camera height above ground (metres).
+        camera_pitch_deg: Camera pitch (degrees, positive = downward).
+        bin_edges: Sorted distance bin edges in metres,
+                   e.g. ``[0, 20, 40, 60, 80, 100]``.
+        evaluated_img_ids: List of image IDs that were actually evaluated.
+            The COCO GT object may contain annotations for many more images
+            than were evaluated (e.g. the full video vs. the validation
+            split).  When provided, GT annotations are scoped to only these
+            images before computing distances and metrics.
+
+    Returns:
+        Dict mapping bin label to a dict with ``"num_gt"`` and the standard
+        COCO metrics returned by :func:`compute_coco_metrics`.
+    """
+    # ---- 0. Scope GT to evaluated images only ----
+    # val_dataset.coco may contain annotations for ALL frames in the JSON,
+    # not just the validation split.  Restrict to evaluated images so GT
+    # counts match what the model actually saw.
+    if evaluated_img_ids is not None:
+        eval_img_set = set(evaluated_img_ids)
+        scoped_anns = {
+            aid: ann for aid, ann in coco_gt.anns.items()
+            if ann["image_id"] in eval_img_set
+        }
+        logger.info(
+            f"Scoped GT from {len(coco_gt.anns)} to {len(scoped_anns)} "
+            f"annotations ({len(eval_img_set)} evaluated images)"
+        )
+    else:
+        scoped_anns = dict(coco_gt.anns)
+
+    # ---- 1. Compute distance for every GT annotation ----
+    gt_distances = _compute_bbox_distances(
+        list(scoped_anns.values()), "id",
+        camera_matrix, camera_height, camera_pitch_deg,
+    )
+    logger.info(
+        f"Distance computed for {len(gt_distances)}/{len(scoped_anns)} "
+        f"GT annotations"
+    )
+
+    # ---- 2. Compute distance for every prediction ----
+    # Predictions don't have a unique "id" key, so we tag each with its
+    # list index under a temporary "_idx" key.
+    for i, pred in enumerate(coco_results):
+        pred["_idx"] = i
+    pred_distances = _compute_bbox_distances(
+        coco_results, "_idx",
+        camera_matrix, camera_height, camera_pitch_deg,
+    )
+    logger.info(
+        f"Distance computed for {len(pred_distances)}/{len(coco_results)} "
+        f"predictions"
+    )
+
+    # ---- 3. Assign GT and predictions to bins ----
+    gt_bins = _assign_bins(
+        list(scoped_anns.keys()), gt_distances, bin_edges,
+    )
+    pred_bins = _assign_bins(
+        [p["_idx"] for p in coco_results], pred_distances, bin_edges,
+    )
+
+    # ---- 4. Per-bin COCO evaluation ----
+    gt_categories = coco_gt.dataset.get("categories", [])
+    gt_images = {img_id: info for img_id, info in coco_gt.imgs.items()}
+
+    binned_metrics: Dict[str, Dict] = {}
+    # Iterate over all bin labels that appear in *either* GT or predictions
+    all_labels = sorted(set(gt_bins.keys()) | set(pred_bins.keys()))
+    for label in all_labels:
+        ann_ids_in_bin = gt_bins.get(label, [])
+
+        # Collect GT annotations for this bin
+        filtered_anns = [scoped_anns[aid] for aid in ann_ids_in_bin]
+        gt_image_ids = {ann["image_id"] for ann in filtered_anns}
+
+        # Collect predictions for this bin (strip temporary _idx key)
+        pred_indices = set(pred_bins.get(label, []))
+        filtered_preds = [
+            {k: v for k, v in coco_results[i].items() if k != "_idx"}
+            for i in pred_indices
+        ]
+        pred_image_ids = {p["image_id"] for p in filtered_preds}
+
+        if not filtered_anns:
+            logger.warning(f"Bin {label}: no GT annotations")
+            binned_metrics[label] = {"num_gt": 0}
+            continue
+
+        if not filtered_preds:
+            logger.warning(
+                f"Bin {label}: {len(ann_ids_in_bin)} GT but no predictions"
+            )
+            binned_metrics[label] = {"num_gt": len(ann_ids_in_bin)}
+            continue
+
+        # Union: loadRes requires every prediction image_id to exist
+        # in the GT image list, even if that image has no GT in this bin.
+        all_image_ids = gt_image_ids | pred_image_ids
+        filtered_gt_dict = {
+            "images": [gt_images[iid] for iid in all_image_ids],
+            "annotations": filtered_anns,
+            "categories": gt_categories,
+        }
+        filtered_coco_gt = COCO()
+        filtered_coco_gt.dataset = filtered_gt_dict
+        filtered_coco_gt.createIndex()
+
+        metrics = compute_coco_metrics(filtered_coco_gt, filtered_preds)
+        metrics["num_gt"] = len(ann_ids_in_bin)
+        binned_metrics[label] = metrics
+
+        logger.info(
+            f"Bin {label}: {len(ann_ids_in_bin)} GT, "
+            f"{len(filtered_preds)} preds, "
+            f"AP50={metrics.get('AP50', -1):.4f}"
+        )
+
+    # Clean up temporary _idx keys from predictions
+    for pred in coco_results:
+        pred.pop("_idx", None)
+
+    return binned_metrics
