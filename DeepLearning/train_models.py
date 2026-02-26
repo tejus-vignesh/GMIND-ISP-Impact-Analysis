@@ -785,11 +785,16 @@ def main():
                 val_dataset.extract_frames(frame_cache_base / "val")
 
             adapted_model = _YOLOTorchVisionAdapter(model)
+            yolo_detections_path = None
+            if args.eval_output:
+                yolo_det_base = Path(args.eval_output)
+                yolo_detections_path = yolo_det_base.parent / f"{yolo_det_base.stem}_detections.json"
             stats, eval_results, eval_coco_gt, eval_img_ids = evaluate_coco(
                 adapted_model,
                 val_loader,
                 device,
                 val_dataset=val_dataset,
+                save_results=str(yolo_detections_path) if yolo_detections_path else None,
                 subset=args.eval_subset,
             )
 
