@@ -1,11 +1,13 @@
 #
 # This script performs parameter sweeps across ISP configurations.
 # It supports one-at-a-time sweeps where each parameter is changed independently
-# while all others remain at their YAML default values.
+# while all others remain at their YAML default values, as well as batch mode
+# where each variant sets multiple parameters together.
 #
 # Features:
 #   - Support for multiple source directories paired 1:1 with output directories
 #   - One-at-a-time parameter sweeps (NOT combinations)
+#   - Batch mode: each --batch defines one variant with multiple parameter overrides
 #   - Generates both PNG images and MP4 videos for each run
 #   - Output directories named after configuration settings
 #   - Run logs documenting each sweep configuration
@@ -27,6 +29,11 @@
 
 #   # With custom base config
 #   python run_isp_sweep.py --config FLIR8.9.yaml --sweep "gac.gamma:0.3,0.4,0.5"
+
+#   # Batch mode: each --batch is one variant with multiple params set together
+#   python run_isp_sweep.py --batch "bnf.intensity_sigma=6,bnf.spatial_sigma=6,bnf.kernel_size=7" \
+#                           --batch "bnf.intensity_sigma=16,bnf.spatial_sigma=16,bnf.kernel_size=13" \
+#                           --batch "bnf.intensity_sigma=72,bnf.spatial_sigma=72,bnf.kernel_size=25"
 
 
 import argparse
@@ -148,36 +155,32 @@ def generate_dir_name(block_name, param_name, value):
     return f"{block_name}_{param_name}-{value}"
 
 
-def create_config_with_single_param(base_config_path, block_name, param_name, value):
+def create_config_with_overrides(base_config_path, overrides):
     """
-    Load base config and override ONE parameter.
-    All other params stay at their YAML default values.
+    Load base config and apply parameter overrides.
 
     Args:
         base_config_path: path to base YAML config
-        block_name: ISP block name to modify
-        param_name: parameter name to modify
-        value: new value for the parameter
+        overrides: list of (block_name, param_name, value) tuples
 
     Returns:
         Config: modified config object
     """
     cfg = Config(base_config_path)
     with cfg.unfreeze():
-        cfg[block_name][param_name] = value
+        for block_name, param_name, value in overrides:
+            cfg[block_name][param_name] = value
     return cfg
 
 
-def save_run_log(out_dir, dir_name, block_name, param_name, value, base_config, source_dir, image_count, elapsed_time):
+def save_run_log(out_dir, dir_name, overrides, base_config, source_dir, image_count, elapsed_time):
     """
     Save a log file documenting the run parameters.
 
     Args:
         out_dir: output directory
         dir_name: configuration directory name
-        block_name: ISP block name
-        param_name: parameter name
-        value: parameter value
+        overrides: list of (block_name, param_name, value) tuples
         base_config: base config filename
         source_dir: source directory path
         image_count: number of images processed
@@ -191,10 +194,9 @@ def save_run_log(out_dir, dir_name, block_name, param_name, value, base_config, 
         f.write(f"Base Config: {base_config}\n")
         f.write(f"Source Directory: {source_dir}\n")
         f.write(f"Images Processed: {image_count}\n")
-        f.write(f"\nParameter Override:\n")
-        f.write(f"  Block: {block_name}\n")
-        f.write(f"  Parameter: {param_name}\n")
-        f.write(f"  Value: {value}\n")
+        f.write(f"\nParameter Overrides:\n")
+        for block_name, param_name, value in overrides:
+            f.write(f"  {block_name}.{param_name} = {value}\n")
         f.write(f"\nProcessing Time: {elapsed_time:.2f}s\n")
     logger.debug(f"Run log saved: {log_path}")
 
@@ -256,6 +258,37 @@ def build_sweep_params(sweep_args):
     return sweep_params
 
 
+def parse_batch_arg(batch_str):
+    """
+    Parse a batch string into a list of parameter overrides for one variant.
+
+    Args:
+        batch_str: string like "bnf.intensity_sigma=6,bnf.spatial_sigma=6,bnf.kernel_size=7"
+
+    Returns:
+        list of tuples: [(block_name, param_name, value), ...]
+    """
+    overrides = []
+    for part in batch_str.split(","):
+        part = part.strip()
+        if "=" not in part or "." not in part.split("=")[0]:
+            raise ValueError(
+                f"Invalid batch format: '{part}'. "
+                f"Expected: 'block.param=value' (e.g., 'bnf.intensity_sigma=6')"
+            )
+        param_part, val_str = part.split("=", 1)
+        block_name, param_name = param_part.split(".", 1)
+        try:
+            value = int(val_str)
+        except ValueError:
+            try:
+                value = float(val_str)
+            except ValueError:
+                value = val_str
+        overrides.append((block_name, param_name, value))
+    return overrides
+
+
 def parse_args():
     """
     Parse command-line arguments.
@@ -264,26 +297,31 @@ def parse_args():
         argparse.Namespace with 'sweep' (list) and 'config' (str)
     """
     parser = argparse.ArgumentParser(
-        description="ISP Parameter Sweep Tool - Run one-at-a-time parameter sweeps",
+        description="ISP Parameter Sweep Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Single parameter sweep
+  # Sweep mode: one parameter at a time
   python run_isp_sweep.py --sweep "gac.gamma:0.3,0.4,0.45,0.5"
-
-  # Multiple parameter sweeps
   python run_isp_sweep.py --sweep "gac.gamma:0.3,0.4,0.5" --sweep "gac.gain:8,32,512"
 
-  # With custom base config
-  python run_isp_sweep.py --config FLIR8.9.yaml --sweep "gac.gamma:0.3,0.4,0.5"
+  # Batch mode: each --batch is one variant with multiple params set together
+  python run_isp_sweep.py --batch "bnf.intensity_sigma=6,bnf.spatial_sigma=6,bnf.kernel_size=7" \\
+                          --batch "bnf.intensity_sigma=16,bnf.spatial_sigma=16,bnf.kernel_size=13"
         """
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
         "-s", "--sweep",
         action="append",
-        required=True,
         metavar="BLOCK.PARAM:VAL1,VAL2,...",
-        help="Sweep specification. Format: block.param:val1,val2,... (can be repeated)"
+        help="Sweep mode: one param at a time. Format: block.param:val1,val2,... (can be repeated)"
+    )
+    mode.add_argument(
+        "-b", "--batch",
+        action="append",
+        metavar="BLOCK.PARAM=VAL,...",
+        help="Batch mode: each --batch defines one variant. Format: block.param=val,block.param=val,... (can be repeated)"
     )
     parser.add_argument(
         "-c", "--config",
@@ -350,41 +388,37 @@ def create_video_from_pngs(save_dir, out_parent, dir_name, video_framerate):
     logger.info(f"Video saved: {out_video_path}")
 
 
-def process_sweep(source_dirs, output_dirs, base_config, sweep_params):
+def process_variants(variants, source_dirs, output_dirs, base_config):
     """
-    Main processing function for parameter sweeps.
+    Process a list of ISP variants. Used by both sweep and batch modes.
 
     Args:
+        variants: list of (dir_name, overrides) where overrides is [(block, param, value), ...]
         source_dirs: list of source directories
         output_dirs: list of output parent directories (must match source_dirs count)
         base_config: base config filename (e.g., "FLIR8.9.yaml")
-        sweep_params: dict of {block_name: {param_name: [values]}}
     """
     # Validate input/output directory pairing
     assert len(source_dirs) == len(output_dirs), \
         f"Source and output dirs must be 1:1. Got {len(source_dirs)} sources and {len(output_dirs)} outputs."
 
-    # Generate sweep runs
-    runs = generate_sweep_runs(sweep_params)
-    total_param_configs = len(runs)
-    total_runs = total_param_configs * len(source_dirs)
+    total_runs = len(variants) * len(source_dirs)
 
-    logger.info(f"Parameter sweep configuration:")
+    logger.info(f"Processing configuration:")
     logger.info(f"  Base config: {base_config}")
     logger.info(f"  Source directories: {len(source_dirs)}")
-    logger.info(f"  Parameter configurations: {total_param_configs}")
+    logger.info(f"  Variants: {len(variants)}")
     logger.info(f"  Total processing runs: {total_runs}")
 
     base_config_path = os.path.join(CONFIG_DIR, base_config)
     if not os.path.exists(base_config_path):
         raise FileNotFoundError(f"Base config not found: {base_config_path}")
 
-    # Process each parameter configuration
-    for run_idx, (block_name, param_name, value) in enumerate(tqdm(runs, desc="Parameter sweeps", unit="config")):
-        dir_name = generate_dir_name(block_name, param_name, value)
-        cfg = create_config_with_single_param(base_config_path, block_name, param_name, value)
-
-        logger.info(f"[{run_idx + 1}/{total_param_configs}] Processing: {block_name}.{param_name} = {value}")
+    # Process each variant
+    for run_idx, (dir_name, overrides) in enumerate(tqdm(variants, desc="ISP variants", unit="variant")):
+        cfg = create_config_with_overrides(base_config_path, overrides)
+        override_str = ", ".join(f"{b}.{p}={v}" for b, p, v in overrides)
+        logger.info(f"[{run_idx + 1}/{len(variants)}] Processing: {override_str}")
 
         # Process each source directory with this configuration
         for src_idx, (src_dir, out_parent) in enumerate(zip(source_dirs, output_dirs)):
@@ -426,7 +460,7 @@ def process_sweep(source_dirs, output_dirs, base_config, sweep_params):
 
             # Save run log
             save_run_log(
-                config_dir, dir_name, block_name, param_name, value,
+                config_dir, dir_name, overrides,
                 base_config, src_dir, len(processed_images), elapsed_time
             )
 
@@ -439,21 +473,34 @@ def process_sweep(source_dirs, output_dirs, base_config, sweep_params):
                 logger.debug(f"  Removing intermediate PNG directory: {save_dir}")
                 shutil.rmtree(save_dir)
 
-    logger.info("Parameter sweep completed.")
+    logger.info("Processing completed.")
 
 
 if __name__ == "__main__":
     # Parse command-line arguments
     args = parse_args()
 
-    # Build sweep parameters from CLI arguments
-    SWEEP_PARAMS = build_sweep_params(args.sweep)
-
-    # Log parsed sweep parameters
-    logger.info("Parsed sweep parameters:")
-    for block, params in SWEEP_PARAMS.items():
-        for param, values in params.items():
-            logger.info(f"  {block}.{param}: {values}")
+    # Build variants list from either sweep or batch mode
+    if args.sweep:
+        SWEEP_PARAMS = build_sweep_params(args.sweep)
+        logger.info("Sweep mode - parsed parameters:")
+        for block, params in SWEEP_PARAMS.items():
+            for param, values in params.items():
+                logger.info(f"  {block}.{param}: {values}")
+        # Each sweep run is a single-override variant
+        variants = [
+            (generate_dir_name(b, p, v), [(b, p, v)])
+            for b, p, v in generate_sweep_runs(SWEEP_PARAMS)
+        ]
+    else:
+        logger.info("Batch mode - parsed variants:")
+        variants = []
+        for batch_str in args.batch:
+            overrides = parse_batch_arg(batch_str)
+            dir_name = "_".join(generate_dir_name(b, p, v) for b, p, v in overrides)
+            override_str = ", ".join(f"{b}.{p}={v}" for b, p, v in overrides)
+            logger.info(f"  {override_str}")
+            variants.append((dir_name, overrides))
 
     # Source directories - must match count of OUTPUT_DIRS
     SOURCE_DIRS = [
@@ -467,4 +514,4 @@ if __name__ == "__main__":
         # "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/SampleData/NightUrbanJunction/2/Processed_Images/FLIR8.9/",
     ]
 
-    process_sweep(SOURCE_DIRS, OUTPUT_DIRS, args.config, SWEEP_PARAMS)
+    process_variants(variants, SOURCE_DIRS, OUTPUT_DIRS, args.config)
