@@ -15,7 +15,7 @@ class EEH(BasicModule):
     def __init__(self, cfg):
         super().__init__(cfg)
 
-        kernel = gen_gaussian_kernel(kernel_size=5, sigma=1.2)
+        kernel = gen_gaussian_kernel(kernel_size=self.params.kernel_size, sigma=self.params.sigma)
         self.gaussian = (1024 * kernel / kernel.max()).astype(np.int32)  # x1024
 
         t1, t2 = self.params.flat_threshold, self.params.edge_threshold

@@ -18,7 +18,7 @@ class BNF(BasicModule):
         self.intensity_weights_lut = self.get_intensity_weights_lut(
             self.params.intensity_sigma
         )  # x1024
-        spatial_weights = gen_gaussian_kernel(kernel_size=5, sigma=self.params.spatial_sigma)
+        spatial_weights = gen_gaussian_kernel(kernel_size=self.params.kernel_size, sigma=self.params.spatial_sigma)
         self.spatial_weights = (1024 * spatial_weights / spatial_weights.max()).astype(
             np.int32
         )  # x1024
