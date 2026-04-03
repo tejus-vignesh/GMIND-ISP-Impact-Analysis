@@ -1,9 +1,14 @@
-# GMIND-sdk
+Readme · MD
+Copy
 
-![GMIND Overview](misc/GMIND-Overall.png)
-
-GMIND-sdk is a toolkit for working with the GMIND ITS infrastructure node dataset. It provides scripts and utilities for image signal processing (ISP), video generation and compression, calibration, validation, and machine learning data loading.
-
+# Same Scene, Different Pipeline: ISP Impact on Automotive Detection at Range
+ 
+This repository contains the code for generating ISP variants, training object detection models, and evaluating results for the paper:
+ 
+> **Same Scene, Different Pipeline: ISP Impact on Automotive Detection at Range**
+> Tejus Vijayakumar, Tim Brophy, Brian Deegan, Ciarán Eising, and Patrick Denny
+ 
+We systematically evaluate how image signal processor (ISP) parameter variation affects nighttime object detection across four detector architectures and five distance bins (0–75 m), using raw Bayer data from the [G-MIND dataset](https://ieee-dataport.org/documents/galway-multimodal-infrastructure-node-dataset).
 ## Features
 
 - **Image Signal Processing (ISP):**
@@ -36,6 +41,10 @@ GMIND-sdk is a toolkit for working with the GMIND ITS infrastructure node datase
    # Clone with submodules (recommended)
    git clone --recurse-submodules https://github.com/daramolloy/GMIND-sdk
    cd GMIND-sdk
+
+   # Clone with submodules
+   git clone --recurse-submodules https://github.com/tejus-vignesh/GMIND-ISP-Impact-Analysis.git
+   cd GMIND-ISP-Impact-Analysis
    
    # Or if already cloned, initialize submodules
    git submodule update --init --recursive
@@ -245,6 +254,7 @@ This repository includes third-party code and git submodules:
   - OC-SORT: See `OC_SORT/LICENSE` for license details
   - Sensor Calibration Toolbox: See `Calibration/` for license information
 
----
 
-**GMIND-sdk** aims to provide a complete, consistent, and extensible toolkit for research and development with the GMIND ITS infrastructure node dataset.
+## Forked From
+ 
+This repository is forked from [daramolloy/GMIND-sdk](https://github.com/daramolloy/GMIND-sdk), the official toolkit for the G-MIND dataset.
