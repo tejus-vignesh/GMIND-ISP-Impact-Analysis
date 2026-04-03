@@ -1,6 +1,3 @@
-Readme · MD
-Copy
-
 # Same Scene, Different Pipeline: ISP Impact on Automotive Detection at Range
  
 This repository contains the code for generating ISP variants, training object detection models, and evaluating results for the paper:
