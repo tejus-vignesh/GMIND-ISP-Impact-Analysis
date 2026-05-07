@@ -9,6 +9,8 @@ data:
   # Root directory of GMIND dataset
   # Examples: Windows: "H:/GMIND", WSL: "/mnt/h/GMIND", Linux: "/path/to/GMIND"
   root: "/home/tejus/Workspace/GMIND-ISP-Impact-Analysis/GMIND"  # UPDATE THIS PATH to your GMIND dataset location
+  # root: "/data/Vijayakumar.TejusVignesh/GMIND/"
+  # root: "/home/tejus/Workspace/data_directory/GMIND"
   
   # Sensor to use
   # Options: "FLIR3.2", "FLIR8.9", "CCTV", "Thermal", "EB", "Drone"

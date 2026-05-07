@@ -31,7 +31,7 @@ DEFAULT_MODELS = ["yolov8m", "yolo26m", "fasterrcnn_resnet50_fpn", "rtdetr-l"]
 MODEL_DEFAULTS = {
     "yolov8m":                 {"batch_size": 64, "backend": "ultralytics", "epochs": 75, "lr": 0.001},
     "yolo26m":                 {"batch_size": 64, "backend": "ultralytics", "epochs": 75, "lr": 0.001},
-    "fasterrcnn_resnet50_fpn": {"batch_size": 8,  "backend": "torchvision", "epochs": 30, "lr": 0.005},
+    "fasterrcnn_resnet50_fpn": {"batch_size": 16,  "backend": "torchvision", "epochs": 30, "lr": 0.005},
     "rtdetr-l":                {"batch_size": 32, "backend": "ultralytics", "epochs": 100, "lr": 0.0001},
 }
 

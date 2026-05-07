@@ -94,21 +94,24 @@ class ISPVariantDataset(GMINDDataset):
                 if allowed_subdirs is not None and subdir_num not in allowed_subdirs:
                     continue
 
-                # --- Locate variant video ---
+                # --- Locate variant video and annotation ---
                 video_path = self._find_variant_video(subdir, variant)
-                if video_path is None:
+                ann_path = self._find_annotation(subdir, subdir_num)
+
+                if video_path is None and ann_path is None:
                     logger.warning(
-                        f"No video for variant '{variant}' in {subdir}"
+                        f"No video or annotation for variant '{variant}' in {subdir}"
                     )
                     continue
-
-                # --- Locate annotation file (flexible) ---
-                ann_path = self._find_annotation(subdir, subdir_num)
                 if ann_path is None:
                     logger.warning(
                         f"No annotation file found in {subdir}"
                     )
                     continue
+                if video_path is None:
+                    logger.info(
+                        f"No video for variant '{variant}' in {subdir} (annotation-only mode)"
+                    )
 
                 video_items.append(
                     {
@@ -119,7 +122,7 @@ class ISPVariantDataset(GMINDDataset):
                     }
                 )
                 logger.debug(
-                    f"  Added: {video_path.name}  ann={ann_path.name}"
+                    f"  Added: {video_path.name if video_path else 'None'}  ann={ann_path.name}"
                 )
 
         logger.info(f"Total ISP variant videos discovered: {len(video_items)}")

@@ -8,7 +8,7 @@ model performance visually.
 
 Features:
     - Side-by-side or overlaid GT and prediction visualisation
-    - Highlights missed large GT objects in orange
+    - Highlights missed GT objects in orange
     - Real-time playback with keyboard controls
     - Frame-by-frame navigation
 
@@ -42,7 +42,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from pycocotools.coco import COCO
 
-from Evaluation.core.baseline_detector_and_tracker import get_gmind_dataloader, load_config
+import yaml
 
 
 def compute_iou(box1, box2):
@@ -86,7 +86,7 @@ def get_area_category(area):
 def visualise_frame(image_np, gt_boxes, pred_boxes, category_id_to_name, max_height=1080):
     """
     Visualise GT and predictions on a frame.
-    Highlights missed large GT objects in orange.
+    Highlights missed GT objects in orange.
 
     Args:
         image_np: Image as numpy array (H, W, C) in RGB format
@@ -167,12 +167,10 @@ def visualise_frame(image_np, gt_boxes, pred_boxes, category_id_to_name, max_hei
         if x2 <= x1 or y2 <= y1:
             continue
 
-        # Determine color: orange for missed large objects, green for matched
+        # Determine color: orange for missed objects, green for matched
         is_matched = gt_idx in matched_gt_indices
-        is_large = get_area_category(area) == "large"
-        is_missed_large = is_large and not is_matched
 
-        if is_missed_large:
+        if not is_matched:
             color = (0, 165, 255)  # Orange in BGR
             label_prefix = "MISSED: "
         else:
@@ -245,12 +243,6 @@ def visualise_frame(image_np, gt_boxes, pred_boxes, category_id_to_name, max_hei
             1,
         )
 
-    # Add title and frame info
-    title_text = (
-        "Green (dashed): Matched GT | Orange (dashed): Missed Large GT | Red (solid): Predictions"
-    )
-    cv2.putText(vis_image, title_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-
     return vis_image
 
 
@@ -261,7 +253,27 @@ def main():
     parser.add_argument(
         "--output-dir", type=str, default="baseline_evaluation_results", help="Output directory"
     )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to GMIND config YAML (default: DeepLearning/gmind_config.yaml)",
+    )
+    parser.add_argument(
+        "--isp-variant",
+        type=str,
+        default=None,
+        help="ISP variant name (e.g. Default_ISP). Uses ISPVariantDataset when set.",
+    )
+    parser.add_argument("--score-threshold", type=float, default=0.5,
+        help="Minimum confidence to display predictions (default: 0.5)")
     parser.add_argument("--fps", type=float, default=10.0, help="Display FPS (default: 10.0)")
+    parser.add_argument(
+        "--frame-stride",
+        type=int,
+        default=None,
+        help="Override frame_stride from config (must match the stride used during eval)",
+    )
     parser.add_argument("--start-frame", type=int, default=0, help="Start frame index (default: 0)")
     parser.add_argument(
         "--max-frames",
@@ -269,12 +281,19 @@ def main():
         default=None,
         help="Maximum number of frames to display (default: all)",
     )
+    parser.add_argument(
+        "--frame",
+        type=int,
+        default=None,
+        help="Display a single frame by image_id (e.g. 6931) and wait for keypress to quit",
+    )
     args = parser.parse_args()
 
     # Load GT
     gt_path = Path(args.gt_file)
     if not gt_path.exists():
-        gt_path = Path(args.output_dir) / gt_path.name
+        print(f"Error: GT file not found: {gt_path}")
+        sys.exit(1)
 
     print(f"Loading GT from: {gt_path}")
     coco_gt = COCO(str(gt_path))
@@ -287,7 +306,8 @@ def main():
     # Load results
     results_path = Path(args.results)
     if not results_path.exists():
-        results_path = Path(args.output_dir) / results_path.name
+        print(f"Error: results file not found: {results_path}")
+        sys.exit(1)
 
     print(f"Loading results from: {results_path}")
     with open(results_path, "r") as f:
@@ -300,30 +320,64 @@ def main():
 
     # Load dataset
     print("\nLoading dataset...")
-    config_path = Path(__file__).parent / "DeepLearning" / "gmind_config.yaml"
-    config = load_config(config_path)
+    if args.config:
+        config_path = Path(args.config)
+    else:
+        config_path = Path(__file__).parent.parent.parent / "DeepLearning" / "gmind_config.yaml"
+
+    if not config_path.exists():
+        print(f"Error: config file not found: {config_path}")
+        sys.exit(1)
+
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
 
     data_root = Path(config["data"]["root"])
     sensor = config["data"].get("sensor", "FLIR8.9")
-    frame_stride = config["data"].get("frame_stride", 1)
+    frame_stride = args.frame_stride if args.frame_stride is not None else config["data"].get("frame_stride", 1)
     max_frames_per_video = config["data"].get("max_frames_per_video")
 
     test_config = config.get("test", {})
     test_sets = test_config.get("sets", [])
     test_set_subdirs = test_config.get("set_subdirs", {})
+    test_percentage_split = test_config.get("percentage_split", {})
+    test_percentage_split_start = test_config.get("percentage_split_start", {})
 
-    test_loader = get_gmind_dataloader(
-        data_root=data_root,
-        sets=test_sets,
-        sensor=sensor,
-        transforms=None,
-        batch_size=1,
-        shuffle=False,
-        num_workers=2,
-        frame_stride=frame_stride,
-        max_frames=max_frames_per_video,
-        set_subdirs=test_set_subdirs,
-    )
+    if args.isp_variant:
+        from SensitivityAnalysis.isp_dataset import get_isp_dataloader
+
+        test_loader = get_isp_dataloader(
+            data_root=data_root,
+            isp_variant=args.isp_variant,
+            sets=test_sets,
+            sensor=sensor,
+            transforms=None,
+            batch_size=1,
+            shuffle=False,
+            num_workers=2,
+            frame_stride=frame_stride,
+            max_frames=max_frames_per_video,
+            set_subdirs=test_set_subdirs,
+            percentage_split=test_percentage_split,
+            percentage_split_start=test_percentage_split_start,
+        )
+    else:
+        from DataLoader import get_gmind_dataloader
+
+        test_loader = get_gmind_dataloader(
+            data_root=data_root,
+            sets=test_sets,
+            sensor=sensor,
+            transforms=None,
+            batch_size=1,
+            shuffle=False,
+            num_workers=2,
+            frame_stride=frame_stride,
+            max_frames=max_frames_per_video,
+            set_subdirs=test_set_subdirs,
+            percentage_split=test_percentage_split,
+            percentage_split_start=test_percentage_split_start,
+        )
     test_dataset = test_loader.dataset
 
     print(f"Dataset loaded: {len(test_dataset)} frames")
@@ -371,8 +425,12 @@ def main():
             else:
                 image_np = np.array(image)
 
-            # Get image_id (frame_idx + 1)
-            image_id = batch_idx + 1
+            # Get image_id from dataset target (matches IDs in GT and detection JSONs)
+            image_id = int(target["image_id"].item()) if isinstance(target["image_id"], torch.Tensor) else int(target["image_id"])
+
+            # Single-frame mode: skip non-matching image_ids
+            if args.frame is not None and image_id != args.frame:
+                continue
 
             # Get GT boxes for this image
             gt_ann_ids = coco_gt.getAnnIds(imgIds=[image_id])
@@ -394,23 +452,35 @@ def main():
                     x2, y2 = x1 + w, y1 + h
                     pred_boxes.append([x1, y1, x2, y2, result["category_id"], result["score"]])
 
+            # Filter by score threshold
+            pred_boxes = [b for b in pred_boxes if b[5] >= args.score_threshold]
+
             # Create visualization
             vis_image = visualise_frame(image_np, gt_boxes, pred_boxes, category_id_to_name)
 
             # Add frame info
-            frame_text = f"Frame {batch_idx + 1}/{len(test_dataset)} | GT: {len(gt_boxes)} | Pred: {len(pred_boxes)} | FPS: {fps:.1f}"
+            frame_text = f"Frame {batch_idx + 1}/{len(test_dataset)} | Ground Truth: {len(gt_boxes)} | Pred: {len(pred_boxes)} | FPS: {fps:.1f}"
             cv2.putText(
                 vis_image,
                 frame_text,
-                (10, vis_image.shape[0] - 10),
+                (10, 40),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
+                1.2,
                 (255, 255, 255),
-                2,
+                3,
             )
 
             # Display
             cv2.imshow("GT and Predictions", vis_image)
+
+            # Single-frame mode: show and wait for q/ESC
+            if args.frame is not None:
+                print("Press 'q' or ESC to close.")
+                while True:
+                    key = cv2.waitKey(0) & 0xFF
+                    if key == ord("q") or key == 27:
+                        break
+                break
 
             # Calculate FPS
             fps_frame_count += 1

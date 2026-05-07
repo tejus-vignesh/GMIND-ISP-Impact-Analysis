@@ -279,14 +279,18 @@ class GMINDDataset(Dataset):
                 next_ann_id_offset += max(ann["id"] for ann in raw_annotations)
 
             # Get video info to determine frame count
-            cap = cv2.VideoCapture(str(item["video_path"]))
-            if not cap.isOpened():
-                logger.warning(f"Could not open video {item['video_path']}")
-                cap.release()
-                continue
-
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            cap.release()
+            if item["video_path"] is not None:
+                cap = cv2.VideoCapture(str(item["video_path"]))
+                if not cap.isOpened():
+                    logger.warning(f"Could not open video {item['video_path']}, using fallback frame count")
+                    cap.release()
+                    total_frames = 10800 # fallback total frames based on GMIND dataset
+                else:
+                    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                    cap.release()
+            else:
+                total_frames = 10800 # fallback total frames based on GMIND dataset
+                logger.info(f"No video available, using fallback total_frames={total_frames}")
 
             # Check if this video needs percentage split
             set_name = item["set_name"]
