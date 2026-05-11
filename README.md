@@ -1,257 +1,98 @@
 # Same Scene, Different Pipeline: ISP Impact on Automotive Detection at Range
- 
-This repository contains the code for generating ISP variants, training object detection models, and evaluating results for the paper:
- 
+
+This repository contains the code accompanying the paper:
+
 > **Same Scene, Different Pipeline: ISP Impact on Automotive Detection at Range**
 > Tejus Vijayakumar, Tim Brophy, Brian Deegan, Ciarán Eising, and Patrick Denny
- 
-We systematically evaluate how image signal processor (ISP) parameter variation affects nighttime object detection across four detector architectures and five distance bins (0–75 m), using raw Bayer data from the [G-MIND dataset](https://ieee-dataport.org/documents/galway-multimodal-infrastructure-node-dataset).
-## Features
+> *Submitted to Electronic Imaging 2026 (EI2026)*
 
-- **Image Signal Processing (ISP):**
-  - Run ISP on RAW images.
-  - Output processed images as video files.
-  - Compress videos with customizable settings.
 
-- **Calibration & Validation:**
-  - Tools for camera and sensor calibration.
-  - Scripts for validating dataset alignment and sensor fusion.
+We systematically evaluate how Image Signal Processor (ISP) parameter variation affects nighttime object detection across four detector architectures and five distance bins (0–75 m), using raw Bayer data from the [G-MIND dataset](https://ieee-dataport.org/documents/galway-multimodal-infrastructure-node-dataset). 23 ISP configurations are produced by sweeping gain, gamma correction, saturation, bilateral noise filtering, and edge enhancement (plus raw Bayer with and without gamma correction); each configuration is used to independently fine-tune YOLOv8m, YOLO26m, Faster R-CNN (ResNet-50 FPN), and RT-DETR-L, yielding 92 trained models that are evaluated per-class and per-distance.
 
-- **LIDAR & Camera Reprojection:**
-  - Overlay LIDAR point clouds onto camera images using calibration data.
+## Citation
 
-- **Video Annotation Generation:**
-  - Automated object detection and tracking pipeline.
-  - Generates COCO-format annotations with temporal tracking.
-  - Optional 3D location computation using geometric ground plane intersection.
-  - Supports multiple detection models (Dome-DETR, YOLOv12x).
+Will be updated once published.
 
-- **PyTorch DataLoader:**
-  - Unified DataLoader for all supported data formats.
-  - Enables consistent training across work packages and models.
-  - Facilitates benchmarking and sensor selection for ITS use cases.
+## Reproducing the paper
 
-## Getting Started
+The end-to-end reproduction has three stages. Each stage links to a sub-module README with full command reference and a list of hyperparameters / config keys to change.
 
-1. Clone the repository with submodules and install dependencies:
-   ```sh
-   # Clone with submodules (recommended)
-   git clone --recurse-submodules https://github.com/daramolloy/GMIND-sdk
-   cd GMIND-sdk
+1. **Generate the 23 ISP variants** — see [`ImageSignalProcessing/`](ImageSignalProcessing/README.md).
+   Run the default ISP, then sweep individual blocks (`gac.gamma`, `gac.gain`, `hsc.saturation_gain`) or batch multi-parameter variants (BNF, EEH) onto every raw frame in the nighttime subset.
 
-   # Clone with submodules
-   git clone --recurse-submodules https://github.com/tejus-vignesh/GMIND-ISP-Impact-Analysis.git
-   cd GMIND-ISP-Impact-Analysis
-   
-   # Or if already cloned, initialize submodules
-   git submodule update --init --recursive
-   
-   # Install dependencies
-   pip install -r requirements.txt
-   
-   # Or install as a package (recommended)
-   pip install -e .
-   
-   # With optional dependencies
-   pip install -e ".[ultralytics,eval]"  # YOLO support + evaluation tools
-   pip install -e ".[all]"               # All optional dependencies
-   ```
+2. **Fine-tune the four detector architectures** — see [`DeepLearning/`](DeepLearning/README.md).
+   `python -m DeepLearning.train_models` with `--use-gmind`, `--gmind-config SensitivityAnalysis/sensitivity_config.yaml`, and `--isp-variant <name>` fine-tunes a model on a single ISP variant. Repeat for all 23 variants × 4 architectures.
 
-   **Note**: This repository uses git submodules for:
-   - `Calibration/` - Sensor Calibration Toolbox
-   - `OC_SORT/` - OC-SORT tracker for multi-object tracking (used by Annotation and Evaluation modules)
+3. **Distance-binned evaluation, plotting, and analysis** — see [`SensitivityAnalysis/`](SensitivityAnalysis/README.md) and [`Evaluation/`](Evaluation/README.md).
+   Use `--eval-only --bin-distance` to compute per-class AP across the 0–15, 15–30, 30–45, 45–60, 60–75 m bins, then aggregate with `SensitivityAnalysis/plot_sensitivity_results.py` and render qualitative frames with `Evaluation/visualisation/save_gt_and_pred_frames.py`.
 
-2. **Download Model Files (for Annotation Generation):**
-   
-   The annotation generation module requires model weights and config files that are too large to commit. Download them separately:
-   
-   **For Dome-DETR (recommended for VisDrone dataset):**
-   - Download `Dome-L-VisDrone-best.pth` (checkpoint) and `Dome-L-VisDrone.yml` (config)
-   - Place them in one of these locations:
-     - `../Dome-DETR/` directory (sibling to GMIND-sdk): 
-       - `../Dome-DETR/configs/dome/Dome-L-VisDrone.yml`
-       - `../Dome-DETR/Dome-L-VisDrone-best.pth`
-     - Or update the paths in `Config` when using the annotation generator
-   - **Download links:** [Add your download links here - e.g., Google Drive, Hugging Face, or your hosting]
-   
-   **Alternative: YOLOv12x (no download needed):**
-   - YOLOv12x models are automatically downloaded by Ultralytics on first use
-   - No manual download required
+### Paper section → code artefact
 
-3. Explore the module folders (see [Module Documentation](#module-documentation) below) for scripts and utilities.
-4. Use the provided DataLoader for training models with PyTorch.
+| Paper section | Artefact | File / command |
+|---|---|---|
+| Tables 2–4 (gain / gamma / saturation) | Single-parameter sweep | `ImageSignalProcessing/run_isp_sweep.py --sweep "<block.param>:<vals>"` |
+| Tables 5–6 (BNF / EEH multi-param) | Multi-parameter batch | `ImageSignalProcessing/run_isp_sweep.py --batch "<block.param>=<val>,..."` |
+| Table 7 (detector architectures) | Training entry-point | `python -m DeepLearning.train_models --model <name> --backend <ultralytics\|torchvision> ...` |
+| Figure 4 (ΔmAP heatmap) | Sensitivity plot | `SensitivityAnalysis/plot_sensitivity_results.py` |
+| Figures 6–7 (per-class AP vs distance) | Distance-binned eval + plot | `train_models.py --eval-only --bin-distance` → `plot_sensitivity_results.py` |
+| Figures 8–9 (qualitative) | Frame visualiser | `Evaluation/visualisation/save_gt_and_pred_frames.py` |
 
 ## Module Documentation
 
-Each module has its own README with detailed documentation:
+Modules used directly to produce the paper are listed first:
 
-- **[Annotation/](Annotation/README.md)** - Video annotation generation with object detection and tracking
-- **[Calibration/](Calibration/README.md)** - Camera and sensor calibration tools
-- **[DataLoader/](DataLoader/README.md)** - PyTorch DataLoader for training
-- **[DeepLearning/](DeepLearning/README.md)** - Multi-backend training framework
-- **[Evaluation/](Evaluation/README.md)** - Model evaluation and benchmarking tools
-- **[ImageSignalProcessing/](ImageSignalProcessing/README.md)** - ISP pipeline for RAW image processing
-- **[TimeSync/](TimeSync/README.md)** - Temporal synchronization utilities
-- **[Validation/](Validation/README.md)** - Sensor fusion validation and visualization
-- **[tests/](tests/README.md)** - Test suite and validation scripts
+- **[ImageSignalProcessing/](ImageSignalProcessing/README.md)** — ISP pipeline (vendored, modified [fast-openISP](https://github.com/QiuJueqin/fast-openISP)) and the variant sweep tool used to produce the 23 ISP configurations.
+- **[DeepLearning/](DeepLearning/README.md)** — Multi-backend training framework (TorchVision, Ultralytics, MMDetection) and the `--eval-only --bin-distance` evaluation entry-point.
+- **[SensitivityAnalysis/](SensitivityAnalysis/README.md)** — Config (`sensitivity_config.yaml`), ISP variant naming convention, and aggregation/plotting scripts.
+- **[Evaluation/](Evaluation/README.md)** — COCO-format evaluation tools, GT generation, and visualisation utilities for the qualitative figures.
 
-## Example Workflows
+Supporting modules:
 
-- **Run ISP and Export Video:**
-  - Use scripts in `ImageSignalProcessing/` to process RAW images and export videos.
-- **Calibrate and Validate Sensors:**
-  - Use scripts in `Calibration/` and `Validation/` to calibrate cameras/LIDARs and validate dataset alignment.
-- **Generate Video Annotations:**
-  - Use `Annotation/annotation_generation.py` to automatically detect, track, and annotate objects in videos.
-  - See the [Annotation Generation](#annotation-generation) section below for details.
-- **Train Models:**
-  - Use the DataLoader to train models on the dataset and compare sensor performance.
+- **[Annotation/](Annotation/README.md)** — Video annotation generation (object detection + tracking → COCO).
+- **[Calibration/](Calibration/README.md)** — Camera and sensor calibration tools.
+- **[DataLoader/](DataLoader/README.md)** — PyTorch DataLoader for the G-MIND format.
+- **[TimeSync/](TimeSync/README.md)** — Temporal synchronisation utilities.
+- **[Validation/](Validation/README.md)** — Sensor-fusion validation and visualisation.
+- **[tests/](tests/README.md)** — Test suite.
 
-## Annotation Generation
+## Getting Started
 
-### Overview
+```sh
+# Clone with submodules
+git clone --recurse-submodules https://github.com/tejus-vignesh/GMIND-ISP-Impact-Analysis.git
+cd GMIND-ISP-Impact-Analysis
 
-The annotation generation module (`Annotation/annotation_generation.py`) is a complete video annotation pipeline that processes videos to automatically detect, track, and annotate objects in COCO format. It uses state-of-the-art object detection models combined with multi-object tracking to generate temporal annotations with optional 3D location information.
+# Or, if already cloned, initialise submodules
+git submodule update --init --recursive
 
-### Core Functionality
-
-The module processes video files frame-by-frame to:
-
-1. **Detect objects** using deep learning models (Dome-DETR or YOLOv12x)
-2. **Track objects** across frames using OC-SORT tracker
-3. **Compute 3D locations** using geometric ground plane intersection (optional)
-4. **Generate COCO-format annotations** with temporal tracking information
-5. **Interpolate positions** for frames between detections
-
-### Main Components
-
-**Config Class:** Configuration dataclass with pipeline parameters including video input, detection model selection, 3D projection settings, tracking parameters, and output options.
-
-**ObjectDetector Class:** Handles object detection using either:
-- **Dome-DETR**: Transformer-based detector optimized for VisDrone dataset
-- **YOLOv12x**: Ultralytics YOLO model for general object detection
-
-Supports three classes: `person`, `bicycle`, `car`
-
-**Tracker Class:** Implements multi-object tracking using **OC-SORT** with IoU/GIoU association, handling occlusions and temporary disappearances.
-
-**TrackedObject Class:** Represents a tracked object with 2D/3D tracking, class information, and temporal data.
-
-### Key Features
-
-- **Adaptive Frame Processing**: Automatically calculates frame skip to achieve target processing FPS (~5 FPS)
-- **3D Location Computation**: Optional geometric ground plane intersection with distortion correction support
-- **Camera Calibration**: Automatically extracts camera intrinsics and distortion coefficients from calibration files
-- **Track Interpolation**: Linear interpolation for both 2D bboxes and 3D locations across skipped frames
-- **COCO Format Output**: Standard JSON format compatible with evaluation tools
-
-### Usage Example
-
-```python
-from Annotation.annotation_generation import Config, process_video
-
-# Create configuration
-config = Config()
-config.video_path = "path/to/video.mp4"
-
-# For Dome-DETR: set paths to downloaded model files (if not in default location)
-# config.detector_model = "dome-detr"
-# config.detector_config_file = "path/to/Dome-L-VisDrone.yml"
-# config.detector_checkpoint = "path/to/Dome-L-VisDrone-best.pth"
-
-# For YOLOv12x: no paths needed, model downloads automatically
-# config.detector_model = "yolo12x"
-
-config.enable_depth_estimation = True  # Enable 3D locations
-config.camera_height = 4.0  # meters
-config.camera_pitch_deg = 20.0  # degrees
-config.dist_coeffs = None  # Optional: distortion coefficients from calibration
-
-# Process video
-process_video(config.video_path, config)
-
-# Output: video_name_anno.json (COCO format)
+# Install
+pip install -e ".[ultralytics,eval]"   # ISP, training (Ultralytics), and COCO eval
+# pip install -e ".[all]"              # everything (incl. MMDetection)
 ```
 
-### Pipeline Workflow
+Submodules used:
+- `Calibration/` — Sensor Calibration Toolbox
+- `OC_SORT/` — OC-SORT tracker (used by the Annotation and Evaluation modules)
 
-```
-Video Input
-    ↓
-Frame-by-Frame Processing
-    ├──→ Object Detection (Dome-DETR/YOLO)
-    │       ↓
-    │   Bounding Boxes + Classes
-    │       ↓
-    ├──→ 3D Projection (if enabled)
-    │       ├──→ Camera Intrinsics + Distortion
-    │       ├──→ Ground Plane Intersection
-    │       └──→ 3D Coordinates (X, Y, Z)
-    │       ↓
-    └──→ OC-SORT Tracking
-            ├──→ Track Association
-            ├──→ Interpolation (missing frames)
-            └──→ Track Management
-                ↓
-COCO Annotations
-    ├──→ Images metadata
-    ├──→ Annotations with track IDs
-    └──→ 3D locations (optional)
-```
+For the paper reproduction you do not need to download any extra model weights — Ultralytics and TorchVision fetch the COCO-pretrained backbones automatically on first use.
 
-### Supported Classes
+## Annotation generation (supporting module)
 
-- **Dome-DETR**: Maps VisDrone classes (`pedestrian/people`, `bicycle`, `car`) to COCO format
-- **YOLOv12x**: Uses COCO classes directly (`person`, `bicycle`, `car`)
-
-### 3D Coordinate System
-
-- **Origin**: Ground level directly below camera
-- **X**: Right (positive = right from camera)
-- **Y**: Forward (positive = forward from camera)
-- **Z**: Up (always 0 for ground intersections)
-
-### Configuration Tips
-
-1. **For faster processing**: Increase `process_every_n_frames` or reduce `target_processing_fps`
-2. **For better tracking**: Lower `tracking_iou_threshold` (0.2 recommended)
-3. **For 3D accuracy**: Ensure camera calibration is correct, including distortion coefficients if available
-4. **For detection quality**: Adjust `detector_conf_threshold` based on model performance
-
-### Output Format
-
-The generated JSON file follows COCO annotation format:
-- Each image (frame) has unique `image_id`
-- Each annotation includes:
-  - `bbox`: [x, y, width, height] in pixels
-  - `category_id`: Class ID (1=person, 2=bicycle, 3=car)
-  - `track_id`: Persistent track ID across frames
-  - `location_3d`: [X, Y, Z] in meters (if enabled)
-
-This format is compatible with standard COCO evaluation tools and can be used for training, evaluation, and further analysis.
+The repository also includes an end-to-end video annotation pipeline (`Annotation/annotation_generation.py`) that runs Dome-DETR or YOLOv12x as a detector, tracks objects with OC-SORT, optionally lifts boxes to 3D via ground-plane intersection, and writes COCO-format JSON. This is not exercised by the EI2026 paper but is part of the underlying G-MIND SDK. See [`Annotation/README.md`](Annotation/README.md) for the full configuration and usage walkthrough.
 
 ## Contributing
 
-Contributions are welcome! Please open issues or pull requests for bug fixes, new features, or improvements.
+Contributions are welcome. Please open issues or pull requests for bug fixes, new features, or improvements.
 
 ## Third-Party Code and Attributions
 
-This repository includes third-party code and git submodules:
-
-- **Git submodules:**
-  - `OC_SORT/` - OC-SORT tracker for multi-object tracking (used by Annotation and Evaluation modules)
-  - `Calibration/` - Sensor Calibration Toolbox
-  
-- **Heavily modified third-party code:**
-  - `ImageSignalProcessing/` - Based on fast-openISP with significant modifications
-
-- **License information:**
-  - This project is licensed under the [MIT License](http://opensource.org/licenses/MIT)
-  - Third-party components retain their original licenses (see respective submodule directories)
-  - OC-SORT: See `OC_SORT/LICENSE` for license details
-  - Sensor Calibration Toolbox: See `Calibration/` for license information
-
+- **Submodules**
+  - `OC_SORT/` — OC-SORT tracker (see `OC_SORT/LICENSE`)
+  - `Calibration/` — Sensor Calibration Toolbox
+- **Heavily modified third-party code**
+  - `ImageSignalProcessing/` — based on [fast-openISP](https://github.com/QiuJueqin/fast-openISP) by Qiu Jueqin (MIT)
+- **License**: MIT. Third-party components retain their original licenses.
 
 ## Forked From
- 
+
 This repository is forked from [daramolloy/GMIND-sdk](https://github.com/daramolloy/GMIND-sdk), the official toolkit for the G-MIND dataset.

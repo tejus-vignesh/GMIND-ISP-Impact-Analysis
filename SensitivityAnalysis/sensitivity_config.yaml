@@ -35,4 +35,4 @@ test:
 distance_eval:
   camera_height: 4.0        # meters above ground
   camera_pitch_deg: 20.0    # degrees, positive = downward
-  bins: [0, 25, 50, 75]  # bin edges in meters (produces: 0-20, 20-40, ..., 80-100, 100+)
+  bins: [0, 15, 30, 45, 60, 75, 90]  # bin edges in meters (produces: 0-20, 20-40, ..., 80-100, 100+)

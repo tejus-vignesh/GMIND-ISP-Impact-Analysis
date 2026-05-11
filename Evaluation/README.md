@@ -35,6 +35,11 @@ This package provides a complete suite of evaluation tools following COCO evalua
   - Highlights missed large objects
   - Interactive frame-by-frame navigation
   - Requires access to original video files from the dataset
+- **`save_gt_and_pred_frames.py`** - Save GT + prediction overlays as PNG frames
+  - Headless variant of `visualise_gt_and_pred.py` (no window, no keyboard controls)
+  - Used to produce the qualitative figures in the EI2026 paper (Figs 8–9)
+- **`generate_coco_gt.py`** - Generate COCO ground-truth JSON from a GMIND config
+  - Required by the evaluation scripts when a GT JSON has not already been written by training
 
 ### **`utils/`** - Utility Scripts
 - **`filter_moving_objects.py`** - Filter to moving objects only
@@ -105,6 +110,28 @@ python -m Evaluation.visualisation.visualise_gt_and_pred \
 **Note:** For visualising annotations by themselves (without evaluation), use:
 ```bash
 python -m Annotation.visualise_annotations /path/to/video.mp4 --delay 10
+```
+
+### Producing paper figures from saved detections
+
+Figures 8 and 9 of the EI2026 paper (*"Same Scene, Different Pipeline: ISP Impact on Automotive Detection at Range"*) are rendered with `save_gt_and_pred_frames.py`, which writes a directory of PNG overlays (matched GT in green dashed, missed GT in orange dashed, predictions in red solid with score) from a COCO detections JSON and the matching COCO GT JSON.
+
+```bash
+python -m Evaluation.visualisation.save_gt_and_pred_frames \
+    --gt-file sensitivity_results/coco_gt.json \
+    --results sensitivity_results/<arch>/<variant>/eval_results_detections.json \
+    --config SensitivityAnalysis/sensitivity_config.yaml \
+    --isp-variant <variant_name> \
+    --output-dir sensitivity_results/<arch>/<variant>/vis_frames
+```
+
+If `coco_gt.json` does not already exist (e.g. you did not invoke training with `--do-eval`), produce it from the same dataset config first:
+
+```bash
+python -m Evaluation.visualisation.generate_coco_gt \
+    --gmind-config SensitivityAnalysis/sensitivity_config.yaml \
+    --isp-variant <variant_name> \
+    --split test
 ```
 
 ### Data Preparation

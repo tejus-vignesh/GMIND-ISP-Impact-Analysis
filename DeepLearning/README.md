@@ -6,6 +6,7 @@ Multi-backend object detection training and benchmarking framework supporting **
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Reproducing the EI2026 paper](#reproducing-the-ei2026-paper)
 - [CLI Reference](#cli-reference)
 - [Architecture & Adapters](#architecture--adapters)
 - [Model Reference](#model-reference)
@@ -118,6 +119,93 @@ python -m tests.smoke_train --model fasterrcnn_resnet50_fpn --num-classes 5
 # Or via CLI entry point:
 smoke-train --model fasterrcnn_resnet50_fpn --num-classes 5
 ```
+
+## Reproducing the EI2026 paper
+
+The paper *"Same Scene, Different Pipeline: ISP Impact on Automotive Detection at Range"* fine-tunes four detector architectures, independently per ISP variant, against the nighttime subset of the G-MIND dataset. The four (architecture, backend, epochs, batch size, learning rate) tuples below come from Table 7 and the *Computational Setup* paragraph of the paper.
+
+**Prerequisite**: the chosen ISP variant must have already been generated (see [`ImageSignalProcessing/README.md`](../ImageSignalProcessing/README.md)). The dataset, splits, and the ISP-variant directory layout are described by `SensitivityAnalysis/sensitivity_config.yaml` — that same YAML is also passed to `train_models.py` via `--gmind-config`.
+
+### Fine-tune one variant on each architecture
+
+Substitute `<variant_name>` with any of the 23 variants (e.g. `gac_gamma-0.1`, `hsc_saturation_gain-2048`, `bnf_intensity_sigma-0.35_bnf_spatial_sigma-0.3_bnf_kernel_size-5`, `Bayer`, `Default_ISP`, …) and `<checkpoint_dir>` with where you want training output to land.
+
+```bash
+# YOLOv8m  (single-stage, 75 epochs, batch 64, lr 0.001)
+python -m DeepLearning.train_models \
+    --use-gmind \
+    --gmind-config SensitivityAnalysis/sensitivity_config.yaml \
+    --isp-variant <variant_name> \
+    --model yolov8m --backend ultralytics \
+    --epochs 75 --batch-size 64 --lr 0.001 --num-workers 8 \
+    --do-eval \
+    --checkpoint-dir <checkpoint_dir>
+
+# YOLO26m  (single-stage, 75 epochs, batch 64, lr 0.001)
+python -m DeepLearning.train_models \
+    --use-gmind \
+    --gmind-config SensitivityAnalysis/sensitivity_config.yaml \
+    --isp-variant <variant_name> \
+    --model yolo26m --backend ultralytics \
+    --epochs 75 --batch-size 64 --lr 0.001 --num-workers 8 \
+    --do-eval \
+    --checkpoint-dir <checkpoint_dir>
+
+# Faster R-CNN ResNet-50 FPN  (two-stage, 30 epochs, batch 16, lr 0.005)
+python -m DeepLearning.train_models \
+    --use-gmind \
+    --gmind-config SensitivityAnalysis/sensitivity_config.yaml \
+    --isp-variant <variant_name> \
+    --model fasterrcnn_resnet50_fpn --backend torchvision \
+    --epochs 30 --batch-size 16 --lr 0.005 --num-workers 8 \
+    --do-eval \
+    --checkpoint-dir <checkpoint_dir>
+
+# RT-DETR-L  (transformer, 100 epochs, batch 32, lr 0.0001)
+python -m DeepLearning.train_models \
+    --use-gmind \
+    --gmind-config SensitivityAnalysis/sensitivity_config.yaml \
+    --isp-variant <variant_name> \
+    --model rtdetr-l --backend ultralytics \
+    --epochs 100 --batch-size 32 --lr 0.0001 --num-workers 8 \
+    --do-eval \
+    --checkpoint-dir <checkpoint_dir>
+```
+
+Reproducing the full paper requires running each of these four commands for every variant in the sweep (23 variants × 4 architectures = 92 trained models).
+
+### Distance-binned evaluation (Figures 4, 6, 7)
+
+After training, re-evaluate any saved checkpoint with per-class distance-binned metrics. Distance is recovered from camera geometry plus the bounding-box foot point, so no additional annotation is required.
+
+```bash
+python -m DeepLearning.train_models \
+    --use-gmind \
+    --gmind-config SensitivityAnalysis/sensitivity_config.yaml \
+    --isp-variant <variant_name> \
+    --model <model> --backend <backend> \
+    --eval-only --bin-distance \
+    --eval-checkpoint <path/to/last.pt or last.pth> \
+    --eval-output <path/to/eval_results.json> \
+    --checkpoint-dir <checkpoint_dir>
+```
+
+The eval JSON is the input file consumed by `SensitivityAnalysis/plot_sensitivity_results.py`. The bin edges, camera height, and camera pitch all come from the `distance_eval:` block in `sensitivity_config.yaml`; camera intrinsics come from `sensor_calibration.txt` at the repository root.
+
+### Where to change hyperparameters
+
+| What | Where |
+|---|---|
+| Epochs, batch size, learning rate, workers | CLI flags `--epochs` / `--batch-size` / `--lr` / `--num-workers` |
+| Model and backend | `--model`, `--backend` |
+| ISP variant | `--isp-variant` |
+| Dataset root, sensor, frame stride, train/val/test splits | `data:`, `train:`, `validation:`, `test:` blocks of `SensitivityAnalysis/sensitivity_config.yaml` |
+| Distance bin edges (paper Figs 4, 6, 7) | `distance_eval.bins` in `sensitivity_config.yaml` |
+| Camera height / pitch for distance estimation | `distance_eval.camera_height`, `distance_eval.camera_pitch_deg` |
+| Camera intrinsics | `sensor_calibration.txt` (repository root) |
+| Augmentation level | `--augment-level light|medium|heavy` |
+| Mixed-precision training | `--use-amp` |
+| Compute device | `--device cuda|cpu` |
 
 ### Python API
 
